@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1230" viewBox="0 0 1280 1230" role="img" aria-labelledby="title desc">
+<title id="title">npm 外网收集与内网离线发布流程</title>
+<desc id="desc">输入包规格、业务 npm 锁文件或 node_modules 安装树。collect 收集原制品；inventory/recover 优先回源，显式 repack 才独立副本禁钩子打包。收集本地资源与审查记录后冻结交付。内网 verify/plan 查冲突，import 用临时 tag 上传精确版本；实际读端点无外网验收通过后，promote 正式 tags 并清理临时 tag。失败时 rollback 条件恢复 tags，业务与资源入口由部署方恢复。</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#52677f"/></marker></defs>
+<style>text{font-family:"PingFang SC","Microsoft YaHei",sans-serif;fill:#172c43}.title{font-size:30px;font-weight:700}.sub{font-size:17px;fill:#52677f}.lane{font-size:23px;font-weight:700}.heading{font-size:21px;font-weight:600}.detail{font-size:17px;fill:#52677f}.note{font-size:17px;fill:#835721}.line{stroke:#52677f;stroke-width:2.5;fill:none;marker-end:url(#arrow)}</style>
+<rect width="1280" height="1230" fill="#f6f8fb"/>
+<text x="40" y="57" class="title">npm 批量下载与内网离线发布</text>
+<text x="40" y="91" class="sub">固定版本 → 依赖与资源审查 → 校验交付 → 导入版本 → 离线验收 → 提升 tags</text>
+<rect x="40" y="125" width="560" height="970" rx="20" fill="#eaf2fc" stroke="#c8daf0"/>
+<rect x="680" y="125" width="560" height="970" rx="20" fill="#eaf5f0" stroke="#c5dfd3"/>
+<text x="70" y="165" class="lane">外网 · 收集与冻结</text>
+<text x="710" y="165" class="lane">内网 · 导入与验收</text>
+
+<rect x="70" y="190" width="500" height="105" rx="12" fill="white" stroke="#3677c7" stroke-width="1.5"/>
+<text x="88" y="220" class="heading">01  确认输入与目标环境</text>
+<text x="88" y="249" class="detail">--packages-file / npm 锁 / node_modules</text>
+<text x="88" y="275" class="detail">固定根版本、Node/npm、OS/CPU/libc</text>
+<path d="M320,295 V320" class="line"/>
+<rect x="70" y="330" width="500" height="105" rx="12" fill="white" stroke="#3677c7" stroke-width="1.5"/>
+<text x="88" y="360" class="heading">02  collect 或 inventory / recover</text>
+<text x="88" y="389" class="detail">保留多版本、peer、optional 及实际包实例</text>
+<text x="88" y="415" class="detail">含嵌套 .pnpm / .store；bundle 重打包阻断</text>
+<path d="M320,435 V460" class="line"/>
+<rect x="70" y="470" width="500" height="105" rx="12" fill="white" stroke="#3677c7" stroke-width="1.5"/>
+<text x="88" y="500" class="heading">03  取得并核验包制品</text>
+<text x="88" y="529" class="detail">优先原 tarball；恢复包标记新摘要及来源</text>
+<text x="88" y="555" class="detail">npm 11.19.0 禁钩子；消费另审 scripts</text>
+<path d="M320,575 V600" class="line"/>
+<rect x="70" y="610" width="500" height="105" rx="12" fill="white" stroke="#3677c7" stroke-width="1.5"/>
+<text x="88" y="640" class="heading">04  --resources 本地资源与审查</text>
+<text x="88" y="669" class="detail">记录目标平台、实际功能及消费配置</text>
+<text x="88" y="695" class="detail">复制本地文件/目录；空清单也需审查</text>
+<path d="M320,715 V740" class="line"/>
+<rect x="70" y="750" width="500" height="105" rx="12" fill="white" stroke="#3677c7" stroke-width="1.5"/>
+<text x="88" y="780" class="heading">05  检查完整性并冻结清单</text>
+<text x="88" y="809" class="detail">验证全部文件摘要、依赖闭包与资源清单</text>
+<text x="88" y="835" class="detail">缺项阻断；tag 目标未交付则排除或扩充批次</text>
+<path d="M320,855 V880" class="line"/>
+<rect x="70" y="890" width="500" height="105" rx="12" fill="white" stroke="#3677c7" stroke-width="1.5"/>
+<text x="88" y="920" class="heading">06  归档并交接</text>
+<text x="88" y="949" class="detail">转移 bundle + 独立渠道记录的归档摘要</text>
+<text x="88" y="975" class="detail">包含 manifest、锁文件、资源及操作说明</text>
+<rect x="710" y="190" width="500" height="105" rx="12" fill="white" stroke="#258364" stroke-width="1.5"/>
+<text x="728" y="220" class="heading">07  verify：验证交付包</text>
+<text x="728" y="249" class="detail">校验归档、路径安全、文件集合及摘要</text>
+<text x="728" y="275" class="detail">登记 --registry 与 --read-registry</text>
+<path d="M960,295 V320" class="line"/>
+<rect x="710" y="330" width="500" height="105" rx="12" fill="white" stroke="#258364" stroke-width="1.5"/>
+<text x="728" y="360" class="heading">08  plan：只读检查同名同版本</text>
+<text x="728" y="389" class="detail">相同内容：跳过上传；版本缺失：准备发布</text>
+<text x="728" y="415" class="detail">不同内容或查询异常：阻断，保留现场</text>
+<path d="M960,435 V460" class="line"/>
+<rect x="710" y="470" width="500" height="105" rx="12" fill="white" stroke="#258364" stroke-width="1.5"/>
+<text x="728" y="500" class="heading">09  import --run：临时 tag 上传</text>
+<text x="728" y="529" class="detail">逐包回读；统计上传/复用及 tarball 字节</text>
+<text x="728" y="555" class="detail">返回 versions-ready；人工部署资源</text>
+<path d="M960,575 V600" class="line"/>
+<rect x="710" y="610" width="500" height="105" rx="12" fill="white" stroke="#258364" stroke-width="1.5"/>
+<text x="728" y="640" class="heading">10  无外网 + 空缓存业务验收</text>
+<text x="728" y="669" class="detail">精确版本/冻结锁；使用实际业务读路由</text>
+<text x="728" y="695" class="detail">资源/scripts 功能证据写 acceptance.json</text>
+<path d="M960,715 V740" class="line"/>
+<rect x="710" y="750" width="500" height="105" rx="12" fill="white" stroke="#258364" stroke-width="1.5"/>
+<text x="728" y="780" class="heading">11  promote：验收后提升 tags</text>
+<text x="728" y="809" class="detail">校验 --acceptance，原始快照只写一次</text>
+<text x="728" y="835" class="detail">已有冲突默认阻断；逐项回读并持久化</text>
+<path d="M960,855 V880" class="line"/>
+<rect x="710" y="890" width="500" height="105" rx="12" fill="white" stroke="#258364" stroke-width="1.5"/>
+<text x="728" y="920" class="heading">12  复核 tag 消费并归档</text>
+<text x="728" y="949" class="detail">promote 清理所属临时 tag，保留运行状态</text>
+<text x="728" y="975" class="detail">失败 rollback 条件恢复；不删除版本</text>
+<path d="M570,942 H640 V242 H700" class="line"/>
+<rect x="609" y="554" width="62" height="112" rx="8" fill="#f6f8fb" stroke="#d4dce6"/>
+<text x="640" y="583" text-anchor="middle" class="sub">离线</text>
+<text x="640" y="610" text-anchor="middle" class="sub">介质</text>
+<text x="640" y="637" text-anchor="middle" class="sub">交接</text>
+<text x="70" y="1060" class="sub">缺依赖 / 缺资源 / 摘要失败 → 补齐后重新冻结</text>
+<text x="710" y="1060" class="sub">tag 条件恢复；业务/资源入口由部署方恢复</text>
+<rect x="40" y="1120" width="1200" height="77" rx="12" fill="#fff4df" stroke="#ebd1a5"/>
+<text x="62" y="1151" class="note">注意：临时 tag 不隔离已上传版本；严格隔离需维护窗口、读权限控制或私服仓库切换能力。</text>
+<text x="62" y="1180" class="note">重打包须专用恢复仓库并显式 --recovery；首版 CLI 的覆盖限本批声明与实际验收范围。</text>
+</svg>
