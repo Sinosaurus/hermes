@@ -1,0 +1,5 @@
+node_modules/
+dist/
+demo/.vitepress/dist/
+demo/.vitepress/cache/
+*.tgz

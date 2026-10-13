@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500" viewBox="0 0 900 500">
+  <rect width="900" height="500" rx="24" fill="#eef2ff"/>
+  <path d="M150 380a300 300 0 0 1 600 0" fill="none" stroke="#e879f9" stroke-width="42"/>
+  <path d="M205 380a245 245 0 0 1 490 0" fill="none" stroke="#818cf8" stroke-width="42"/>
+  <path d="M260 380a190 190 0 0 1 380 0" fill="none" stroke="#38bdf8" stroke-width="42"/>
+  <text x="450" y="450" text-anchor="middle" font-family="sans-serif" font-size="28" fill="#312e81">Iris · Mermaid &amp; Image Preview</text>
+</svg>

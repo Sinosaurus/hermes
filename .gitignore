@@ -3,3 +3,7 @@ node_modules/
 .npm-cache/
 /bundle/
 /runs/
+
+/dist/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/

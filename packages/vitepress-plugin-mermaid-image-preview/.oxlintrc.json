@@ -1,0 +1,4 @@
+{
+  "categories": { "correctness": "error" },
+  "ignorePatterns": ["dist/**", "demo/.vitepress/dist/**", "demo/.vitepress/cache/**"]
+}

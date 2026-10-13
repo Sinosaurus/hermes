@@ -1,12 +1,50 @@
 {
-  "name": "npm-download-publish",
+  "name": "@nova-cbb/hermes",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "nova-hm": "dist/cli/index.js"
+  },
   "type": "module",
-  "engines": { "node": ">=22" },
-  "bin": { "offline-npm": "src/cli.mjs" },
   "scripts": {
-    "cli": "node src/cli.mjs",
-    "test": "node --test test/*.test.mjs"
+    "dev": "tsx src/cli/index.ts",
+    "cli": "tsx src/cli/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint --deny-warnings",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "test": "npm run build && vitest run",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run docs:build"
+  },
+  "dependencies": {
+    "cac": "7.1.0",
+    "cli-progress": "3.12.0",
+    "npm-package-arg": "13.0.2",
+    "semver": "7.8.5",
+    "ssri": "13.0.1",
+    "validate-npm-package-name": "7.0.2"
+  },
+  "devDependencies": {
+    "@types/cli-progress": "3.11.6",
+    "@types/node": "26.6.5",
+    "@types/npm-package-arg": "6.1.4",
+    "@types/semver": "7.8.0",
+    "@types/ssri": "7.1.5",
+    "@types/validate-npm-package-name": "4.0.2",
+    "mermaid": "11.17.2",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitepress": "2.0.0-alpha.20",
+    "vitepress-plugin-mermaid-image-preview": "0.1.1",
+    "vitest": "5.0.4"
+  },
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
   }
 }
