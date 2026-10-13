@@ -65,20 +65,11 @@ npm run docs:preview    # 预览构建结果
 
 文档站使用 VitePress **2.0.0-alpha.20**（2.x 预发布版），提供中文导航、侧栏、本地搜索和页内目录。
 
-Mermaid 使用 **11.17.2**，预览使用 npm 包 `vitepress-plugin-mermaid-image-preview@0.1.1`，不再直接引用本地插件源码。插件源码保留在 `packages/vitepress-plugin-mermaid-image-preview/`，修改后需发布新版本并更新本站依赖。Markdown Mermaid 代码块会渲染成图表；Mermaid 图和普通图片（PNG/JPEG/WebP/SVG 等）都可点击或用 Enter/空格打开同一个预览弹窗。
+Mermaid 使用 **11.17.2**，预览使用 npm 包 `vitepress-plugin-mermaid-image-preview@0.1.1`，不再直接引用本地插件源码。插件源码与发布维护在[独立 GitHub 仓库](https://github.com/Sinosaurus/vitepress-plugin-mermaid-image-preview)，本站通过更新 npm 依赖使用新版本。Markdown Mermaid 代码块会渲染成图表；Mermaid 图和普通图片（PNG/JPEG/WebP/SVG 等）都可点击或用 Enter/空格打开同一个预览弹窗。
 
 预览支持按钮及滚轮缩放（10%–800%，滚轮以光标为中心）、鼠标/触屏拖动、双指缩放、方向键平移、适应窗口和 Esc 关闭；`+`/`-` 缩放，`0` 复位。Mermaid 随站点打包，浏览器无需访问外部渲染服务；仓库内 SVG 仍可独立离线查看。
 
-Iris 插件具有独立的 package.json、锁文件、MIT 许可证、演示站和测试，可整体复制到单独仓库。插件的构建与检查在独立目录执行（TypeScript 6 + vue-tsc、Oxlint、Oxfmt、Vitest）；父项目检查不扫描独立包产物：
-
-```sh
-cd packages/vitepress-plugin-mermaid-image-preview
-npm ci --ignore-scripts --no-audit --no-fund
-npm run check
-npm pack
-```
-
-发布和其他 VitePress 项目的接入方式见插件 README；实际 npm 发布由发布者执行。
+插件开发、发布和其他 VitePress 项目的接入方式见[插件仓库 README](https://github.com/Sinosaurus/vitepress-plugin-mermaid-image-preview#readme)。本仓库不保留插件源码。
 
 ## 内网工具交付
 

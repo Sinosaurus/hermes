@@ -99,7 +99,7 @@ docs/          # VitePress 文档站
 | `docs/development.md`            | 安装、开发、构建、质量检查与离线工具交付                       |
 | `dist/`                          | TypeScript 自动构建产物，不手工修改、不提交                    |
 
-独立插件位于 `packages/vitepress-plugin-mermaid-image-preview/`：`src/index.ts` 为根导出入口，`src/markdown/index.ts` 实现 Markdown 插件，`src/theme/index.ts` 提供主题扩展，`src/theme/mermaid/` 包含图表组件与渲染队列，`src/theme/preview/` 包含共用预览组件、缩放和双指手势算法；`test/`、`demo/` 与构建配置均在包内。该目录可独立拷走发布，详细 API 与发布步骤见其 README。
+Mermaid 与图片预览使用 npm 包 `vitepress-plugin-mermaid-image-preview`；源码、测试和演示在[独立仓库](https://github.com/Sinosaurus/vitepress-plugin-mermaid-image-preview)维护，不属于本仓库目录。
 
 ## 4. 阅读与修改顺序
 
