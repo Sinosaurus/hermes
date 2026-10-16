@@ -4,7 +4,17 @@
 
 包名为 `@nova-cbb/hermes`，CLI 命令为 `nova-hm`。
 
-## 安装与开发
+普通使用者在 npm 包发布后安装即可，无需构建源码：
+
+```sh
+npm install -g @nova-cbb/hermes
+nova-hm --help
+nova-hm --version
+```
+
+收集和导入流程、npm 可选安装参数见[快速开始](index.md#安装一次)。以下命令用于源码开发；当前仓库的发布准备要求见下文。
+
+## 源码安装与开发
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
@@ -19,6 +29,16 @@ npm run dev -- recover --help
 CLI 按 [Vite 的实现](https://github.com/vitejs/vite/blob/main/packages/vite/src/node/cli.ts) 组织：链式声明 `command → option → action`，由 `cli.parse()` 直接分发，异步 action 内统一处理错误。重复单值选项取最后一次，例如 `--bundle ./old --bundle ./new` 使用 `./new`；`--package`、`--allow-host`、`--allow-link-root`、`--install-flag` 保留全部值。空值、互斥参数和发布目标的业务限制继续校验。
 
 开发命令默认仍相对当前工作目录读取输入。验证真实业务时，请在业务目录执行构建后的工具，避免读到工具自身的锁文件或安装树。
+
+开发时可选用 `npm link` 调试全局命令，普通 npm 安装无需此步骤：
+
+```sh
+npm run build
+npm link --offline --ignore-scripts --no-audit --no-fund
+nova-hm --help
+```
+
+也可直接执行 `node /absolute/path/to/hermes/dist/cli/index.js --help`，无需注册全局命令。更新源码后需重新构建。
 
 ## TypeScript 执行工具选型
 
@@ -55,6 +75,28 @@ npm run check           # 以上检查及文档构建
 
 测试文件由 Vitest 编译执行；`typecheck` 专门检查生产源码。测试中刻意构造的非法输入由运行时断言验证。
 
+## npm 发布准备
+
+当前 `package.json` 仍有 `private: true`，尚未配置 `files` 或 `prepack`；本文的用户安装命令在维护者完成发布后适用。发布前需由维护者处理发布字段与产物范围：
+
+- 解除 `private: true` 对发布的阻止，确认包名、版本、目标 registry 和 scope 的发布权限；公开发布时明确选择公开访问级别。
+- 明确打包包含完整 `dist/` 及必要的包元数据和说明文件，可用 `files` 限定发布范围；若保留 README 中的文档链接，也应保留对应文档与图片。通过 `pack` 文件清单确认实际产物，不只检查 `bin` 入口。
+- 没有 `prepack` 时须手工构建；即使后续增加该钩子，以下禁钩子打包命令仍要求先构建。发布包须包含可直接运行的编译产物，不能依赖安装时编译。
+
+字段与打包范围规则见 [npm package.json 文档](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)。准备好发布字段后执行：
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build
+npm run check
+npm pack --dry-run --ignore-scripts --json
+npm pack --ignore-scripts --json
+```
+
+检查 pack 的文件清单和实际 `.tgz`：必须包含 `dist/cli/index.js` 及它导入的全部编译模块，核对包名、版本、`bin` 和 Node 要求；不得夹带 bundle/run、凭据或本地缓存。随后在空临时目录禁钩子安装该 `.tgz`，验证 `nova-hm --help`、`--version`，避免源码目录现存依赖掩盖缺失产物。`pack` 只生成本地制品，不代表已发布或已通过目标私服验收。
+
+生产依赖仍由 npm 安装，`package-lock.json` 不随 npm 包发布，不能用源码锁文件承诺用户全局安装的传递依赖完全一致。发布版本及实际生产依赖应作为独立工具批次冻结、导入内网并验证，业务 bundle 不包含它们。
+
 ## 文档站
 
 ```sh
@@ -71,17 +113,23 @@ Mermaid 使用 **11.17.2**，预览使用 npm 包 `vitepress-plugin-mermaid-imag
 
 插件开发、发布和其他 VitePress 项目的接入方式见[插件仓库 README](https://github.com/Sinosaurus/vitepress-plugin-mermaid-image-preview#readme)。本仓库不保留插件源码。
 
-## 内网工具交付
+## 内网安装与交付
 
-在与内网相同的操作系统和 CPU 平台准备运行依赖，外网先执行安装和 `npm run build`，再交付 `dist/`、`package.json`、`package-lock.json` 与工具自身的 `node_modules/`。业务 `bundle/` 单独交付。开发和文档工具无需在内网运行。
+先由私服维护者将已验收的 Hermes 发布版本及全部生产依赖（含传递依赖）导入内网私服，业务 `bundle/` 单独交付。只有 Hermes 的 `.tgz` 不能保证断网安装成功；开发和文档依赖无需在内网安装。内外网工具使用同一版本，Node/npm/tar 另行准备。
 
 ```sh
-cd /path/to/tool
-npm link --offline --ignore-scripts --no-audit --no-fund
-nova-hm --help
+# 将 <version> 替换为已验收的实际版本；工具安装使用内网读端点。
+npm install -g '@nova-cbb/hermes@<version>' \
+  --registry https://npm.intranet.example/group/
 nova-hm --version
+nova-hm --help
+
+# 在 bundle 的父目录配置业务导入的可写 hosted 端点。
+cd /path/to/batch
+npm config set registry https://npm.intranet.example/hosted/ --location=project
+nova-hm import
 ```
 
-不注册全局命令时，也可直接执行 `node /path/to/tool/dist/cli/index.js --help`。
+工具安装的 group/聚合读端点与导入的 hosted 写端点各司其职；业务使用聚合读路由时，导入命令另传 `--read-registry https://npm.intranet.example/group/`。认证、CA 与已有 scope 路由使用受控 npm 配置，确认实际依赖与 tarball URL 均可从内网访问；用空缓存、无外网环境验证安装和启动。
 
-`dist/` 为构建产物，更新源码后需重新构建。源码内使用 `.js` 扩展名导入，由 TypeScript NodeNext 解析到对应 `.ts` 文件，并生成可直接运行的 Node ESM。
+`dist/` 为 npm 发布包中的编译产物。源码内使用 `.js` 扩展名导入，由 TypeScript NodeNext 解析到对应 `.ts` 文件，并生成可直接运行的 Node ESM。

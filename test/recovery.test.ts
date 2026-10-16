@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
 import { inventoryModules, stageInstance, findModulesDirectory } from '../src/core/recovery.js';
+import { recover } from '../src/core/collect.js';
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'npm-recovery-'));
@@ -183,4 +184,37 @@ test('staging rejects package directories replaced by outside links after invent
   const destination = path.join(root, 'staging');
   await assert.rejects(stageInstance(instance, destination), { code: 'changed-package-path' });
   await assert.rejects(fs.stat(destination), { code: 'ENOENT' });
+});
+
+test('recovery rejects bundle output inside the installed tree before creating directories', async (t) => {
+  const { root, modules } = await fixture(t);
+  const source = await pkg(path.join(modules, 'first'), 'first');
+  const alias = path.join(root, 'modules-link');
+  await fs.symlink(modules, alias);
+  for (const out of [
+    path.join(modules, 'bundle'),
+    path.join(source, 'bundle'),
+    path.join(alias, 'nested', 'bundle'),
+  ]) {
+    await assert.rejects(recover({ modules, out, repack: true }), { code: 'unsafe-output-path' });
+    await assert.rejects(fs.stat(out), { code: 'ENOENT' });
+  }
+  assert.deepEqual((await inventoryModules(modules)).issues, []);
+  assert.deepEqual((await fs.readdir(source)).sort(), ['index.js', 'package.json']);
+  await assert.rejects(fs.stat(path.join(modules, 'nested')), { code: 'ENOENT' });
+});
+
+test('recovery protects allowed link roots when the output parent resolves through a link', async (t) => {
+  const { root, modules } = await fixture(t);
+  const allowed = path.join(root, 'other', 'node_modules');
+  const linked = await pkg(path.join(allowed, 'linked'), 'linked');
+  await fs.symlink(linked, path.join(modules, 'linked'));
+  const alias = path.join(root, 'allowed-link');
+  await fs.symlink(allowed, alias);
+  const out = path.join(alias, 'nested', 'bundle');
+  await assert.rejects(recover({ modules, out, repack: true, allowLinkRoots: [alias] }), {
+    code: 'unsafe-output-path',
+  });
+  await assert.rejects(fs.stat(path.join(allowed, 'nested')), { code: 'ENOENT' });
+  assert.deepEqual((await fs.readdir(linked)).sort(), ['index.js', 'package.json']);
 });

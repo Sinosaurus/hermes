@@ -20,13 +20,15 @@
 
 ### 1.1 日常使用：下载 → 搬运 → 上传
 
-首次准备工具：使用 Node 22.12+ 或 24+（推荐 Node 24 LTS）、npm 11.19.0 和系统 `tar`，在本项目目录执行一次：
+首次准备工具：使用 Node 22.12+ 或 24+（推荐 Node 24 LTS）、npm 11.19.0 和系统 `tar`。工具发布到 npm 后全局安装：
 
 ```sh
-npm ci --ignore-scripts --no-audit --no-fund
-npm run build
-npm link --offline --ignore-scripts --no-audit --no-fund
+npm install -g @nova-cbb/hermes
+nova-hm --version
+nova-hm --help
 ```
+
+受控安装需要的 `--ignore-scripts`、`--no-audit`、`--no-fund` 均按需追加，说明见[使用首页](index.md#安装一次)。
 
 **外网下载**：切换到业务目录或本批次的独立工作目录（不要停留在工具源码目录），将根包写进 `packages.json`，例如 `["commander@15.0.0", "semver@7.8.5"]`，执行一次即可收集全部传递依赖：
 
@@ -34,7 +36,15 @@ npm link --offline --ignore-scripts --no-audit --no-fund
 nova-hm collect
 ```
 
-**带入内网**：转移生成的 `bundle/`、构建后的 `dist/`、`package.json`、`package-lock.json` 和已安装的工具 `node_modules/`；内网准备相同工具链，并在工具目录执行一次 `npm link --offline --ignore-scripts --no-audit --no-fund` 注册 `nova-hm`。在生成的 `bundle/` 所在的父目录执行，先按私服要求配置 npm 发布凭证；工具路径可以与业务目录分开。
+**带入内网**：转移生成的 `bundle/`，准备相同工具链。Hermes 及其全部运行依赖需由私服维护者提前导入内网，业务 bundle 不包含工具依赖。在内网从可读私服安装与外网相同的工具版本，以下以 `0.1.0` 为例：
+
+```sh
+npm install -g @nova-cbb/hermes@0.1.0 \
+  --registry=https://npm.intranet.example/group/
+nova-hm --version
+```
+
+只带入 Hermes 自身的 `.tgz` 不能保证断网安装；具体准备见[内网安装与交付](development.md#内网安装与交付)。工具安装完成后，在生成的 `bundle/` 所在父目录配置 npm 发布凭证。
 
 **批量上传**：将示例地址换成自己的可写托管仓库地址：
 
@@ -76,7 +86,7 @@ nova-hm recover
 
 入口必须是真实的 node_modules 目录，普通源码目录不能作为扫描入口。包实例的真实路径也必须在 node_modules 内；指向外部源码/workspace 或不在 node_modules 内的 store 链接会阻断。`--allow-link-root` 仅允许登记其他 node_modules 内的实体，不能放宽这个限制。工具不会自动扫描兄弟项目、下载缺失安装树、开启重打包或覆盖已有 bundle。
 
-CLI 的直接/传递依赖固定在 `package-lock.json`；业务 bundle 不包含本工具的依赖。独立工具交付与其他恢复方式见 [工具链与支持范围](architecture.md#2-工具链与支持范围)。
+源码开发和构建的依赖由 `package-lock.json` 固定；npm 发布包不包含该锁文件，内网须导入并验收实际安装所需的全部运行依赖。工具安装及支持范围见 [工具链与支持范围](architecture.md#2-工具链与支持范围)。
 
 ### 1.2 按需使用的其他命令
 

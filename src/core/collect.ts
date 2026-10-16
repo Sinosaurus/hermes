@@ -1,10 +1,18 @@
 // 文件职责：编排项目收集与安装树恢复；校验、取包和冻结分别交给具体步骤。
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import type { CollectOptions, RecoverOptions, Tags } from './types.js';
-import { registrySpec, normalizeRegistry, packageSpec, writeJson } from '../lib/index.js';
+import { DEFAULT_SOURCE_REGISTRY } from '../config.js';
+import {
+  registrySpec,
+  normalizeRegistry,
+  packageSpec,
+  writeJson,
+  canonicalPath,
+} from '../lib/index.js';
 import { inventoryModules } from './recovery.js';
+import { inside, failure } from './installed/paths.js';
 import {
   newBundle,
   failBundle,
@@ -55,7 +63,7 @@ export async function collect({
   out,
   project,
   specs = [],
-  registry = 'https://registry.npmjs.org/',
+  registry = DEFAULT_SOURCE_REGISTRY,
   allowHosts = [],
   resourcesFile,
   installFlags = [],
@@ -115,6 +123,13 @@ export async function recover({
     throw new Error(
       `Recovery blocked: ${inventory.issues.map((item) => `${item.code} (${item.path}): ${item.message}`).join('; ')}`,
     );
+  const output = await canonicalPath(out);
+  const protectedRoots = [
+    inventory.sourceRoot,
+    ...(await Promise.all(allowLinkRoots.map((root) => realpath(path.resolve(root))))),
+  ];
+  if (protectedRoots.some((root) => inside(root, output)))
+    throw failure('unsafe-output-path', 'Recovery output must be separate from the installed tree');
   const bundle = await newBundle(out, repack ? 'recovery' : 'mirror', onProgress);
   bundle.stats.total = new Set(inventory.instances.map(packageSpec)).size;
   const work = await mkdtemp(path.join(tmpdir(), 'offline-npm-recover-'));

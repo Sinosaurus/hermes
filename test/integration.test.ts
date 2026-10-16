@@ -7,7 +7,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promise
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { recover } from '../src/core/collect.js';
-import { importBundle, promoteRun, rollbackRun } from '../src/core/publish.js';
+import { importBundle, rollbackRun } from '../src/core/publish.js';
 import { command, npmCommand, packArtifact, readArtifact, readJson } from '../src/lib/index.js';
 
 async function fixture(root, name, version, marker, dependencies = {}) {
@@ -182,6 +182,7 @@ test(
       }
     });
     const marker = path.join(root, 'hooks-ran');
+    const oldLeaf = await fixture(root, 'native-leaf', '0.9.0', marker);
     const leaf = await fixture(root, 'native-leaf', '1.0.0', marker);
     const dependency = await fixture(root, '@fixture/native-dependency', '1.0.0', marker, {
       'native-leaf': '^1.0.0',
@@ -194,6 +195,7 @@ test(
     source.seed(dependency, { latest: '1.0.0' });
     source.seed(newRoot, { latest: '2.0.0', beta: '2.0.0' });
     target.seed(oldRoot, { latest: '1.0.0' });
+    target.seed(oldLeaf, { stable: '0.9.0' });
     const resourcesFile = path.join(root, 'resources.json');
     await writeFile(
       resourcesFile,
@@ -218,8 +220,6 @@ test(
           'native-leaf@1.0.0',
           '--registry',
           source.base,
-          '--resources',
-          resourcesFile,
           '--progress',
           'none',
         ],
@@ -229,6 +229,7 @@ test(
     const manifest = await readJson(path.join(bundle, 'manifest.json'));
     const { manifestDigest } = collected;
     assert.equal(manifest.roots.length, 2);
+    assert.equal(manifest.resourceReview.status, 'reviewed');
     assert.equal(collected.stats.total, 3);
     assert.equal(collected.stats.downloaded, 3);
     assert.equal(collected.stats.reused, 1);
@@ -262,6 +263,8 @@ test(
       ),
     );
     assert.equal(imported.phase, 'versions-ready');
+    assert.equal(target.packages.get('native-leaf').tags.latest, undefined);
+    assert.equal(target.packages.get('native-leaf').tags.stable, '0.9.0');
     assert.equal(target.packages.get('native-root').tags.latest, '1.0.0');
     assert.equal(target.packages.get('native-root').tags[imported.temporaryTag], '2.0.0');
     assert.equal(target.writes.filter((write) => write.method === 'publish').length, 3);
@@ -315,7 +318,13 @@ test(
         ],
       }),
     );
-    const promoted = await promoteRun(runDir, { acceptanceFile, overwriteTags: true });
+    const promoted = JSON.parse(
+      await command(
+        process.execPath,
+        [path.resolve('dist/cli/index.js'), 'promote', '--overwrite-tags', '--progress=none'],
+        { cwd: root },
+      ),
+    );
     assert.equal(promoted.phase, 'promoted');
     assert.deepEqual(promoted.cleanupPending, []);
     assert.deepEqual(target.packages.get('native-root').tags, { latest: '2.0.0', beta: '2.0.0' });
@@ -331,9 +340,16 @@ test(
         'Publishing must preserve collected tarball bytes',
       );
     }
-    const rolledBack = await rollbackRun(runDir);
+    const rolledBack = JSON.parse(
+      await command(
+        process.execPath,
+        [path.resolve('dist/cli/index.js'), 'rollback', '--progress=none'],
+        { cwd: root },
+      ),
+    );
     assert.equal(rolledBack.phase, 'rolled-back');
     assert.deepEqual(target.packages.get('native-root').tags, { latest: '1.0.0' });
+    assert.deepEqual(target.packages.get('native-leaf').tags, { stable: '0.9.0' });
     assert.deepEqual(target.packages.get('@fixture/native-dependency').tags, {});
     assert.ok(
       target.packages.get('native-root').versions['2.0.0'],

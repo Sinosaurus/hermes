@@ -145,3 +145,16 @@ test('collection defaults prefer packages.json and explicit input; publishing ne
   assert.equal(output.instances[0].name, 'fixture');
   assert.equal(output.instances[0].locations[0], await realpath(path.join(modules, 'fixture')));
 });
+
+test('resource defaults apply to explicit inputs without replacing an explicit resource file', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'offline-npm-resource-defaults-'));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const input = { package: ['fixture@1.0.0'] };
+  assert.deepEqual(await collectDefaults(input, root), input);
+  const resources = path.join(root, 'resources.json');
+  await writeFile(resources, '{"resources":[]}');
+  assert.deepEqual(await collectDefaults(input, root), { ...input, resources });
+  const explicit = { ...input, resources: path.join(root, 'explicit-resources.json') };
+  assert.deepEqual(await collectDefaults(explicit, root), explicit);
+  assert.equal((await collectDefaults({ project: root }, root)).resources, resources);
+});

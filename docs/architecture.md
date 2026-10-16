@@ -50,7 +50,7 @@ flowchart TD
 | `src/lib/packages.ts`               | npm 包名、精确 SemVer、registry 规格及 dist-tag 校验   |
 | `src/lib/npm.ts` / `security.ts`    | 受控 npm/子进程调用、端点边界与错误脱敏                |
 | `src/lib/files.ts` / `artifacts.ts` | 原子文件写入、路径/SRI/SHA-256、归档与 bundle 校验     |
-| `src/config.ts`                     | 已验证 npm 版本及输出上限                              |
+| `src/config.ts`                     | 已验证 npm 版本、CLI 默认值及输出上限                  |
 | `src/core/collect.ts`               | 编排收集与恢复，保留原有公开入口及失败清理             |
 | `src/core/collection/`              | 分离输入解析、原制品、重打包、资源复制与批次冻结       |
 | `src/core/recovery.ts`              | 编排安装树盘点与独立 staging                           |
@@ -70,19 +70,20 @@ flowchart TD
 运行需要 **Node.js 22.12+ 或 24+（推荐 Node 24 LTS）、npm 11.19.0、系统 `tar`**。npm 版本为打包路径的硬校验；Node 24.21.0 是本地钩子验证所用版本。不要用旧 npm 的目录 `pack --ignore-scripts` 推断 prepare 已禁用。首版操作说明面向 POSIX 环境；Windows 原生路径、权限和 tar 行为需另外验证，可先在 WSL 使用。
 
 ```sh
-# 外网准备 CLI 本身；ignore-scripts 不会删除依赖包的 scripts。
-npm ci --ignore-scripts --no-audit --no-fund
-npm run build
-npm link --offline --ignore-scripts --no-audit --no-fund
+# 以下在 @nova-cbb/hermes 发布后适用。
+npm install -g @nova-cbb/hermes
 node --version
 npm --version
 tar --version
 nova-hm --help
+nova-hm --version
 ```
+
+安装后可直接在业务目录或批次工作目录调用 `nova-hm`，无需下载源码、构建或执行 `npm link`。记录 `nova-hm --version` 的结果，内外网使用同一已验收版本；需要固定版本时安装 `@nova-cbb/hermes@<version>`，将 `<version>` 替换为实际发布版本。npm 可选安装参数见[快速开始](index.md#安装一次)。当前仓库仍需完成发布准备，见[开发指南](development.md#npm-发布准备)。
 
 源码使用 TypeScript；质量检查使用 Oxlint/Oxfmt，回归测试使用 Vitest，文档站使用 VitePress。开发命令见[开发指南](development.md)。
 
-CLI 的直接依赖采用精确版本，传递依赖由 `package-lock.json` 固定。CLI 采用与 Vite 一致的 `cac`；校验库采用 npm 生态实现。
+CLI 的直接依赖采用精确版本，源码开发和构建的依赖由 `package-lock.json` 固定。npm 发布包不包含该锁文件，不能据此承诺全局安装的传递依赖树完全一致；内网须准备并验收实际安装所需的全部生产依赖。CLI 采用与 Vite 一致的 `cac`；校验库采用 npm 生态实现。打包规则见 [npm package.json 文档](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#files)。
 
 | 库                                                                            | 用途与选择依据                                                                        |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -93,11 +94,38 @@ CLI 的直接依赖采用精确版本，传递依赖由 `package-lock.json` 固�
 | [validate-npm-package-name](https://github.com/npm/validate-npm-package-name) | 采用 npm 的可发布包名规则                                                             |
 | [ssri](https://github.com/npm/ssri)                                           | 流式 SRI 校验和最强算法选择；未知/非法项仍阻断，SHA-1 仅兼容旧上游 shasum             |
 
-**离线运行工具的准备**：在外网执行上面的 `npm ci`，将构建后的 `dist/`、`package.json`、`package-lock.json` 和安装好的 `node_modules/` 作为独立工具交付物一起带入内网；同时提供目标平台可运行的 Node/npm/tar。内网在工具目录执行一次 `npm link --offline --ignore-scripts --no-audit --no-fund` 注册命令，再运行 `nova-hm --version`、`--help` 确认工具可启动。不要在无外网且没有完整私服依赖时执行 `npm ci`，该命令会先清空现有 node_modules。CLI 的依赖和运行时不包含在业务 bundle 内，需要独立记录工具版本与交接摘要。若改为从内网私服安装 CLI，先完成这些依赖的镜像并验证锁文件的读取路由。
+**内网安装工具的准备**：由私服维护者先将 Hermes 的同一发布版本及其全部生产依赖（含传递依赖）导入内网私服，再从内网实际读端点安装。业务 bundle 不包含工具依赖；只有 Hermes 的 `.tgz` 不能保证断网安装成功。Node/npm/tar 由运行环境独立准备，工具批次与业务批次分别记录版本和交接摘要。
+
+```sh
+# 将 <version> 替换为外网确认过的实际版本；安装走可读的 group/聚合端点。
+npm install -g '@nova-cbb/hermes@<version>' \
+  --registry https://npm.intranet.example/group/
+nova-hm --version
+nova-hm --help
+```
+
+安装认证、CA 及已有 scope 路由使用受控 npm 配置，确认所有依赖和 tarball 都从内网读取。先在无外网、空缓存环境验证工具安装；不要以旧全局安装或缓存命中代替依赖完整性验收。工具安装的读端点可为 group；后续 `import` 的目标必须为可写 hosted，见第 6 节。
 
 ### 默认参数与安装树查找
 
 日常入口参见 [最短使用流程](index.md)。路径默认相对当前工作目录：输出/输入 bundle 为 `./bundle`，run 为 `./runs/default`，验收文件为 `./acceptance.json`，进度为 `auto`。既有 bundle 不覆盖，新的批次需换工作目录或显式指定路径；同一 run 的批次/端点约束继续生效。
+
+| 参数                                                                  | 不传时                                                                  |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `collect/recover --out`、`verify/plan/import --bundle`                | `./bundle`                                                              |
+| `import/promote/rollback --run`                                       | `./runs/default`                                                        |
+| `promote --acceptance`                                                | `./acceptance.json`；文件内容须为真实验收记录                           |
+| `collect --project` / `--packages-file`                               | 优先当前目录已有的 `packages.json`，其次当前项目 npm 锁文件             |
+| `inventory/recover --node-modules`                                    | 从当前目录向上查找最近的 `node_modules`                                 |
+| `collect/recover --registry`                                          | `https://registry.npmjs.org/`；重打包不使用源 registry                  |
+| `plan/import --registry` / `--read-registry`                          | 当前 npm 有效 registry 配置 / 同写端点                                  |
+| `collect/recover --resources`                                         | 当前目录已有的 `resources.json`；不存在则保留 `resourceReview: pending` |
+| `--package` / `--allow-host` / `--allow-link-root` / `--install-flag` | 空列表；按需重复传入                                                    |
+| `--repack` / `--recovery` / `--overwrite-tags`                        | `false`；仅显式开启                                                     |
+| `--progress` / `--json`                                               | `auto` / `false`；终端摘要，重定向 JSON                                 |
+| `inventory --out`                                                     | 不写文件，输出到 stdout                                                 |
+
+默认路径与源 registry 集中定义于 `src/config.ts`，命令声明和直接调用 CLI action 使用同一组默认值。资源审查、验收证据及恢复/覆盖许可仍须由操作者提供。
 
 collect 未传输入时先找当前目录 `packages.json`，其次找 npm-shrinkwrap/package-lock；只自动采用有 npm 锁的项目，缺输入时给出操作提示。收集/原制品恢复默认源为 npm 官方源。发布省略 registry 时读取 npm 的有效配置，配置仍为 `registry.npmjs.org` 时拒绝自动发布；写入目标不能凭工具猜测。显式配置的参数优先，repack/recovery/tag 覆盖仍须明确选择。
 
@@ -111,7 +139,7 @@ inventory/recover 未传 node_modules 时，从当前目录逐级向上查找最
 | `inventory`                                  | 普通 npm/Yarn 安装树、各层 node_modules 内的 pnpm `.pnpm` / Yarn `.store`、scope、嵌套包、受控链接     | PnP zip/loader 不支持；盘点不证明缺失依赖或原业务根完整                     |
 | `recover --registry`                         | 按实例实际 name/version 获取上游 tarball                                                               | 不保留本地补丁、安装后修改或原安装副作用                                    |
 | `recover --repack`                           | 内容副本禁钩子打包；保留 scripts，计算新 integrity                                                     | 不重放补丁或构建；拒绝声明 bundledDependencies 的目录恢复；使用专用恢复仓库 |
-| 非 npm 资源                                  | `--resources` 指定本地文件/目录、使用说明、平台及审查证据                                              | 不自动下载 URL，不扫描脚本猜全资源，不部署资源服务                          |
+| 非 npm 资源                                  | 自动读取当前目录已有的 `resources.json`，或 `--resources` 指定本地文件/目录、使用说明、平台及审查证据  | 不自动下载 URL，不扫描脚本猜全资源，不部署资源服务                          |
 | 发布与 tag                                   | 同版本实际字节比对、临时 tag 导入、验收后正式 tag、条件回滚                                            | 不同步 deprecated 到目标，不删除版本，不协调跨机器写入                      |
 
 `--install-flag` 仅接收 `--legacy-peer-deps`、`--strict-peer-deps`、`--install-links=true`、`--install-links=false`，传参形如 `--install-flag=--legacy-peer-deps`，可重复。只有原业务确实使用这些参数才传入，不能为解决解析失败随意改树。其他项目配置应先在外网生成受控 npm 锁并验证；首版不承诺复现任意 `.npmrc`。
@@ -164,15 +192,26 @@ runs/batch-a/
 
 `identity.json` 首次导入写入，绑定 bundle 绝对路径、manifestDigest、冻结 manifest、写/读 registry、恢复模式、原始包级 tag 快照和随机临时 tag。`state.json` 用 identity 文件摘要绑定原件，记录版本验证、临时 tag 所有权、tag 变更意图、验收记录、次数和 phase。
 
+目标仓库的包级 tag 通过 `npm dist-tag ls` 读取，不依赖 `latest` 存在，也不依赖首次快照中的版本继续存在；无 `latest` 的仓库仍可导入，旧版本被移除后仍可检查回滚与清理所需的当前 tags。
+
 首次预检失败后，若 run 中除本次锁之外没有任何文件，原命令可重新初始化；已有身份/状态或其他文件的不完整 run 仍拒绝重新初始化。盘点后进入 staging 时复核真实路径，目录被替换为链接时拒绝恢复。
 
 续跑复用同一 `--run`，必须保持 bundle、读写端点和恢复模式一致。不能将原始快照替换成修改后的 tags。JSON 写临时文件并同步后原子落盘；运维仍需保留目录备份。同 run 有本地排他锁；跨 run、跨机器操作同仓库必须由部署方安排单写者或维护窗口。
 
 ## 4. 外网收集
 
-以下使用本地工具通过 `npm link` 注册的 `nova-hm` 命令，可从业务目录或批次工作目录调用。示例路径和 registry 需要替换，凭证/CA 沿用受控 npm 配置；不要将 token 放在 URL、bundle 或命令记录中。机器读取 stdout 时使用 `nova-hm` 或 `npm --silent run cli --`，普通 npm run 会另外打印脚本头。
+以下使用 npm 安装后提供的 `nova-hm` 命令，可从业务目录或批次工作目录调用。示例路径和 registry 需要替换，凭证/CA 沿用受控 npm 配置；不要将 token 放在 URL、bundle 或命令记录中。机器读取 stdout 时使用 `nova-hm`；源码开发时可用 `npm --silent run cli --`，普通 npm run 会另外打印脚本头。
 
 ### 4.1 批量输入
+
+在业务目录准备 npm 锁，或在批次工作目录准备 `packages.json`；资源审查放在同目录的 `resources.json`，即可使用默认路径：
+
+```sh
+nova-hm collect
+nova-hm verify
+```
+
+需要从其他目录读取输入、切换批次或使用不同源时，再显式传参：
 
 ```sh
 nova-hm collect \
@@ -239,6 +278,8 @@ nova-hm import \
 
 ### 4.3 本地资源
 
+collect/recover 未传 `--resources` 时自动读取当前工作目录已有的 `resources.json`；显式指定的文件优先。自动发现的文件内容错误、显式文件不存在或内容错误都会失败，不会悄悄略过审查记录。
+
 资源配置中的 `source` 相对配置文件目录解析；既可以是单文件，也可以是已审查缓存目录。禁止目录内符号链接，复制后所有文件加入校验清单。CLI 计算交付摘要；下载资源时的来源真实性和预期摘要核对由审查者负责。
 
 ```json
@@ -272,9 +313,18 @@ nova-hm import \
 }
 ```
 
-不提供资源配置可以收集/导入，但 `resourceReview` 保持 `pending`，不能正式提升 tags。证据字符串用于追踪记录；CLI 不读取证据内容或替操作者完成审查。资源实际部署及共享入口切换由部署方执行，`rollback` 不恢复资源入口。
+未指定资源配置且当前目录不存在 `resources.json` 时可以收集/导入，但 `resourceReview` 保持 `pending`，不能正式提升 tags。补齐审查后需重新收集新批次，不修改冻结 manifest。证据字符串用于追踪记录；CLI 不读取证据内容或替操作者完成审查。资源实际部署及共享入口切换由部署方执行，`rollback` 不恢复资源入口。
 
 ## 5. 只有 node_modules
+
+在业务目录执行，自动向上寻找安装树，资源配置沿用当前目录的 `resources.json`：
+
+```sh
+nova-hm inventory
+nova-hm recover
+```
+
+需要保留完整盘点文件、调整输入/输出路径或显式重打包时：
 
 ```sh
 nova-hm inventory \
@@ -297,13 +347,26 @@ nova-hm recover \
 
 `inventory` 不提供 `--out` 时在 stdout 输出结果：终端摘要，重定向或 `--json` 为完整 JSON。其他 node_modules 内的合法链接实体用重复 `--allow-link-root /absolute/other/node_modules` 登记；外部源码目录即使登记也会拒绝。断链、包内不安全链接、同名同版本不同内容等 issues 会阻断 recover。
 
-盘点保留实例 realpath、locations、内容摘要、store/peer context，不修改源树、不执行 install/rebuild/prune/dedupe。`--repack` 实体复制到独立 staging，排除普通 `node_modules`，拒绝声明的 bundledDependencies；不会修改原 store 的硬链接文件。
+盘点保留实例 realpath、locations、内容摘要、store/peer context，不修改源树、不执行 install/rebuild/prune/dedupe。恢复输出不能位于源 `node_modules` 或获准链接的实体内，默认 `./bundle` 也受此检查；在安装树内部运行时须切回业务目录或显式指定树外输出。`--repack` 实体复制到独立 staging，排除普通 `node_modules`，拒绝声明的 bundledDependencies；不会修改原 store 的硬链接文件。
 
 打包固定 npm 11.19.0，并用 `--ignore-scripts` 禁钩子，**tarball 内 scripts 保留**。npm 的 `files`/ignore 规则仍会筛选文件，所以 pack 成功不能证明已安装的产物完整进入归档。消费端单独审查 prepare/install/postinstall 及隐式 node-gyp 行为。原生二进制限定原平台/ABI；更多说明见 [手册第 13 节](operations.md#13-仅有-node_modules恢复与发布)。
 
 恢复包不推测历史 `latest`，重打包批次当前没有源 tag 计划。通过精确版本使用专用恢复仓库；`plan`/`import` 加 `--recovery` 才接受该类别，仓库隔离和业务读路由由部署方确认。该开关是显式接受恢复路径，不会自动创建或鉴别仓库性质。
 
 ## 6. 内网版本导入与 tag 提升
+
+从内网读端点安装同一版本的 Hermes 后，在 bundle 的父目录配置一次可写 hosted，即可沿用默认路径。安装工具时使用的 group/聚合读端点不能直接作为发布写端点。完成真实业务验收，将记录写入 `acceptance.json` 后才执行 promote：
+
+```sh
+npm config set registry https://npm.intranet.example/hosted/ --location=project
+nova-hm import
+# 实际验收后：
+nova-hm promote
+# 需要恢复时：
+nova-hm rollback
+```
+
+需要单独预检、使用聚合读端点或指定其他批次路径时：
 
 ```sh
 nova-hm verify --bundle /absolute/path/to/bundle
@@ -371,7 +434,7 @@ CLI 检查状态、摘要、读写 registry、平台声明、resourceReview 和�
 
 ## 8. 运维与未覆盖项
 
-- 所有路径使用明确绝对路径；run 置于 bundle 外。先预估 tarball、资源、staging、缓存、发布请求编码和私服空间。
+- 默认路径相对当前工作目录，跨目录操作可使用明确绝对路径；run 置于 bundle 外，恢复输出置于原安装树外。先预估 tarball、资源、staging、缓存、发布请求编码和私服空间。
 - 认证和 CA 使用现有受控 npm 配置。registry 只接受 HTTPS，回环本地测试允许 HTTP；确认 hosted 写端点、scope 路由和实际 tarball 地址。
 - 收集失败目录不可当作完整 bundle 导入。普通失败可保留现场后新建输出；已冻结批次修复另建批次。
 - `.lock` 残留先核对记录中的进程、机器和执行状态，确认无写者后才人工移除；不自动抢占。

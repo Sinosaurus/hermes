@@ -2,7 +2,7 @@
 import type { CliOptions, CommandResult, OutputStream } from './types.js';
 import type { TransferStats } from '../core/types.js';
 import { stripVTControlCharacters } from 'node:util';
-import { PACK_NPM_VERSION } from '../config.js';
+import { PACK_NPM_VERSION, DEFAULT_RUN_DIR } from '../config.js';
 import { formatBytes } from './progress.js';
 import { redact } from '../lib/security.js';
 
@@ -45,7 +45,7 @@ export function resultSummary(action: string, result: CommandResult, options: Cl
     lines = [
       states[result.phase] || result.phase,
       `目标仓库：${result.registry}`,
-      `运行记录：${options.run}`,
+      `运行记录：${options.run ?? DEFAULT_RUN_DIR}`,
     ];
     if (result.cleanupPending?.length)
       lines.push(`待清理临时 tag：${result.cleanupPending.length} 项，请使用同一 run 重试。`);
@@ -83,6 +83,8 @@ function errorHint(error: Error & { code?: string; npmCode?: string }) {
     return '已有文件或目录不会覆盖，请通过 --out 指定新输出路径；上传续跑保留原 --run。';
   if (error.code === 'ENOENT')
     return '检查报错路径；先用 collect 或 recover 生成 bundle，验收文件需另行准备。';
+  if (error.code === 'unsafe-output-path')
+    return '通过 --out 指定原 node_modules 和许可链接实体目录之外的输出路径。';
   if (
     [
       'missing-node-modules',

@@ -6,8 +6,7 @@ import { persist } from './run.js';
 import * as common from '../../lib/index.js';
 
 export async function currentTags(api: Api, identity: RunIdentity, name: string) {
-  const pkg = identity.manifest.packages.find((pkg) => pkg.name === name);
-  return tagsFor(api, name, identity.registry, pkg?.version);
+  return tagsFor(api, name, identity.registry);
 }
 
 export async function writeTag(

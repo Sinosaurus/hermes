@@ -6,6 +6,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { command, fileHash, readArtifact, readJson, writeJson } from '../src/lib/index.js';
 import { importBundle, planImport, promoteRun, rollbackRun } from '../src/core/publish.js';
+import { adapters } from '../src/core/publishing/context.js';
+import { tagsFor } from '../src/core/publishing/registry.js';
 
 const REGISTRY = 'https://registry.internal/npm/';
 const READ_REGISTRY = 'https://registry.internal/group/';
@@ -102,10 +104,7 @@ function registryAdapter() {
       assert.equal(args[0], 'view');
       const { name, version } = split(args[1]);
       const item = packages.get(name);
-      if (!item || !item.versions.size || (version !== '*' && !item.versions.has(version)))
-        throw npmError('E404');
-      if (args[2] === 'version') return [...item.versions.keys()];
-      if (args[2] === 'dist-tags') return { ...item.tags };
+      if (!item || !item.versions.has(version)) throw npmError('E404');
       assert.equal(args[2], 'dist');
       return { tarball: item.versions.get(version).tarball };
     },
@@ -139,6 +138,17 @@ function registryAdapter() {
         return '{}';
       }
       assert.equal(args[0], 'dist-tag');
+      if (args[1] === 'ls') {
+        hooks.query?.(args);
+        const item = packages.get(args[2]);
+        if (!item || !item.versions.size) throw npmError('E404');
+        if (!Object.keys(item.tags).length)
+          throw new Error(`npm failed: npm error No dist-tags found for ${args[2]}\n`);
+        return Object.entries(item.tags)
+          .map(([tag, version]) => `${tag}: ${version}`)
+          .sort()
+          .join('\n');
+      }
       const { name, version } =
         args[1] === 'add' ? split(args[2]) : { name: args[2], version: null };
       const tag = args[3];
@@ -177,6 +187,87 @@ const options = (f, remote, extra = {}) => ({
   runDir: f.runDir,
   adapter: remote.adapter,
   ...extra,
+});
+
+test('包级 tag 查询解析真实 npm 文本，支持仅有预发布 tag 的包', async () => {
+  const api = adapters(
+    {
+      adapter: {
+        async npmCommand(args, options) {
+          assert.deepEqual(args, [
+            'dist-tag',
+            'ls',
+            'demo-package',
+            '--json',
+            '--loglevel=error',
+            '--color=false',
+          ]);
+          assert.equal(options.registry, REGISTRY);
+          return 'beta: 2.0.0-beta.1\r\nstable: 1.0.0\r\n';
+        },
+      },
+    },
+    'plan',
+  );
+  assert.deepEqual(await tagsFor(api, 'demo-package', REGISTRY), {
+    beta: '2.0.0-beta.1',
+    stable: '1.0.0',
+  });
+});
+
+test('tag 查询拒绝畸形、重复及非法 tag 或版本文本', async () => {
+  for (const output of [
+    '',
+    'latest 1.0.0',
+    'latest: 1.0.0\nlatest: 2.0.0',
+    ' latest: 1.0.0\n',
+    'latest: 1.0.0 \n',
+    'v1: 1.0.0',
+    'latest: not-a-version',
+  ]) {
+    const api = adapters({ adapter: { npmCommand: async () => output } }, 'plan');
+    await assert.rejects(tagsFor(api, 'demo-package', REGISTRY), /Invalid dist-tag snapshot/);
+  }
+});
+
+test('tag 查询只将 E404 或当前包的明确空 tag 错误视为空快照', async () => {
+  for (const error of [
+    npmError('E404'),
+    new Error('No dist-tags found for demo-package'),
+    new Error('node failed: npm error No dist-tags found for demo-package\nnpm error Log file'),
+  ]) {
+    const api = adapters(
+      {
+        adapter: {
+          npmCommand: async () => {
+            throw error;
+          },
+        },
+      },
+      'plan',
+    );
+    assert.deepEqual(await tagsFor(api, 'demo-package', REGISTRY), {});
+  }
+  for (const error of [
+    ...['E401', 'E403', 'E500'].map((code) =>
+      Object.assign(new Error('No dist-tags found for demo-package'), { npmCode: code }),
+    ),
+    new Error('No dist-tags found for other-package'),
+    new Error('No dist-tags found for demo-package (request failed)'),
+    new Error('Command timed out'),
+  ]) {
+    const api = adapters(
+      {
+        adapter: {
+          npmCommand: async () => {
+            throw error;
+          },
+        },
+      },
+      'plan',
+    );
+    await assert.rejects(tagsFor(api, 'demo-package', REGISTRY), /Registry query failed/);
+  }
 });
 
 test('import freezes original tags, uses a temporary tag and retries without republishing identical bytes', async (t) => {
@@ -464,6 +555,36 @@ test('temporary tag cleanup checks version ownership before deletion', async (t)
   assert.equal(remote.calls.tag.length, 0);
   remote.get(f.pkg.name).tags[imported.temporaryTag] = '1.0.0';
   assert.equal((await rollbackRun(f.runDir, { adapter: remote.adapter })).phase, 'rolled-back');
+});
+
+test('rollback 在首个版本删除后仍能清理同包其他版本上的所属临时 tag', async (t) => {
+  const f = await fixture(t, { versions: ['1.0.0', '2.0.0'] });
+  const remote = registryAdapter();
+  const imported = await importBundle(f.bundle, options(f, remote));
+  remote.get(f.pkg.name).versions.delete('1.0.0');
+  const rolledBack = await rollbackRun(f.runDir, { adapter: remote.adapter });
+  assert.equal(rolledBack.phase, 'rolled-back');
+  assert.deepEqual(rolledBack.cleanupPending, []);
+  assert.ok(!Object.hasOwn(remote.get(f.pkg.name).tags, imported.temporaryTag));
+  assert.ok(remote.get(f.pkg.name).versions.has('2.0.0'));
+});
+
+test('rollback 将整包不存在视为临时 tag 已清理，查询权限失败则保留待处理项', async (t) => {
+  const f = await fixture(t);
+  const remote = registryAdapter();
+  const imported = await importBundle(f.bundle, options(f, remote));
+  remote.hooks.query = (args) => {
+    if (args[0] === 'dist-tag') throw npmError('E403');
+  };
+  const pending = await rollbackRun(f.runDir, { adapter: remote.adapter });
+  assert.equal(pending.phase, 'rollback-pending');
+  assert.deepEqual(pending.cleanupPending, [f.pkg.name]);
+  assert.equal(remote.get(f.pkg.name).tags[imported.temporaryTag], '1.0.0');
+  delete remote.hooks.query;
+  remote.packages.delete(f.pkg.name);
+  const rolledBack = await rollbackRun(f.runDir, { adapter: remote.adapter });
+  assert.equal(rolledBack.phase, 'rolled-back');
+  assert.deepEqual(rolledBack.cleanupPending, []);
 });
 
 test('modified identity or original snapshot is rejected before any remote write', async (t) => {

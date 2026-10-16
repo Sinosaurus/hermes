@@ -40,7 +40,6 @@ export async function inspectBundle(bundle: string, options: PublishOptions, api
     version: undefined,
   });
   const packages = [];
-  const existing = new Map();
   for (const pkg of manifest.packages) {
     api.progress({ name: pkg.name, version: pkg.version });
     const exists = await remoteArtifact(api, pkg, registry);
@@ -50,15 +49,12 @@ export async function inspectBundle(bundle: string, options: PublishOptions, api
       version: pkg.version,
       action: exists ? 'reuse' : 'publish',
     });
-    if (exists) {
-      existing.set(pkg.name, pkg.version);
-      if (api.operation === 'plan') api.stats.reused++;
-    }
+    if (exists && api.operation === 'plan') api.stats.reused++;
     api.progress({ completed: packages.length });
   }
   const tagSnapshot: Record<string, Tags> = {};
   for (const name of new Set(manifest.packages.map((pkg) => pkg.name)))
-    tagSnapshot[name] = await tagsFor(api, name, registry, existing.get(name));
+    tagSnapshot[name] = await tagsFor(api, name, registry);
   const tagChanges = (manifest.tagPlan ?? []).flatMap((plan) =>
     Object.entries(plan.set ?? {}).map(([tag, version]) => {
       const before = valueAt(tagSnapshot[plan.name], tag);

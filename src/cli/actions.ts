@@ -1,7 +1,13 @@
 // 文件职责：命令适配层：映射参数、调用业务、管理进度并输出 JSON。
 import type { CliAction, CliOptions } from './types.js';
 import type { OnProgress, VerifiedBundle } from '../core/types.js';
-import { DEFAULT_SOURCE_REGISTRY } from '../config.js';
+import {
+  DEFAULT_SOURCE_REGISTRY,
+  DEFAULT_BUNDLE_DIR,
+  DEFAULT_RUN_DIR,
+  DEFAULT_ACCEPTANCE_FILE,
+  DEFAULT_RESOURCES_FILE,
+} from '../config.js';
 import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import { collect, recover } from '../core/collect.js';
@@ -49,8 +55,16 @@ async function exists(file: string) {
   }
 }
 
+/** 资源记录可按约定文件名读取；没有记录时仍保留待审查状态。 */
+async function resourceDefaults(options: CliOptions, cwd = process.cwd()) {
+  if (options.resources) return options;
+  const file = path.join(cwd, DEFAULT_RESOURCES_FILE);
+  return (await exists(file)) ? { ...options, resources: file } : options;
+}
+
 /** 显式输入优先；无输入时使用当前目录包列表，其次使用项目 npm 锁。 */
 export async function collectDefaults(options: CliOptions, cwd = process.cwd()) {
+  options = await resourceDefaults(options, cwd);
   if (options.project || options.package?.length || options.packagesFile) return options;
   if (await exists(path.join(cwd, 'packages.json')))
     return { ...options, packagesFile: path.join(cwd, 'packages.json') };
@@ -67,16 +81,16 @@ export async function collectDefaults(options: CliOptions, cwd = process.cwd()) 
 export async function collectAction(options: CliOptions, onProgress: OnProgress) {
   options = await collectDefaults(options);
   const verified = await collect({
-    out: options.out ?? './bundle',
+    out: options.out ?? DEFAULT_BUNDLE_DIR,
     project: options.project,
     specs: await packageInputs(options),
-    registry: options.registry,
+    registry: options.registry ?? DEFAULT_SOURCE_REGISTRY,
     allowHosts: options.allowHost,
     resourcesFile: options.resources,
     installFlags: options.installFlag,
     onProgress,
   });
-  return bundleSummary(options.out ?? './bundle', verified);
+  return bundleSummary(options.out ?? DEFAULT_BUNDLE_DIR, verified);
 }
 
 export async function inventoryAction(options: CliOptions, onProgress: OnProgress) {
@@ -94,9 +108,10 @@ export async function inventoryAction(options: CliOptions, onProgress: OnProgres
 }
 
 export async function recoverAction(options: CliOptions, onProgress: OnProgress) {
+  options = await resourceDefaults(options);
   const verified = await recover({
     modules: options.nodeModules,
-    out: options.out ?? './bundle',
+    out: options.out ?? DEFAULT_BUNDLE_DIR,
     registry: options.repack ? undefined : (options.registry ?? DEFAULT_SOURCE_REGISTRY),
     repack: options.repack,
     allowHosts: options.allowHost,
@@ -104,13 +119,13 @@ export async function recoverAction(options: CliOptions, onProgress: OnProgress)
     resourcesFile: options.resources,
     onProgress,
   });
-  return bundleSummary(options.out ?? './bundle', verified);
+  return bundleSummary(options.out ?? DEFAULT_BUNDLE_DIR, verified);
 }
 
 export async function verifyAction(options: CliOptions) {
   return bundleSummary(
-    options.bundle ?? './bundle',
-    await verifyBundle(options.bundle ?? './bundle'),
+    options.bundle ?? DEFAULT_BUNDLE_DIR,
+    await verifyBundle(options.bundle ?? DEFAULT_BUNDLE_DIR),
   );
 }
 
@@ -133,24 +148,24 @@ async function registryOptions(options: CliOptions, onProgress: OnProgress) {
   return {
     registry: await targetRegistry(options.registry),
     readRegistry: options.readRegistry,
-    runDir: options.run,
+    runDir: options.run ?? DEFAULT_RUN_DIR,
     recovery: options.recovery,
     onProgress,
   };
 }
 
 export const planAction = async (options: CliOptions, onProgress: OnProgress) =>
-  planImport(options.bundle ?? './bundle', await registryOptions(options, onProgress));
+  planImport(options.bundle ?? DEFAULT_BUNDLE_DIR, await registryOptions(options, onProgress));
 export const importAction = async (options: CliOptions, onProgress: OnProgress) =>
-  importBundle(options.bundle ?? './bundle', await registryOptions(options, onProgress));
+  importBundle(options.bundle ?? DEFAULT_BUNDLE_DIR, await registryOptions(options, onProgress));
 export const promoteAction = (options: CliOptions, onProgress: OnProgress) =>
-  promoteRun(options.run ?? './runs/default', {
-    acceptanceFile: options.acceptance,
+  promoteRun(options.run ?? DEFAULT_RUN_DIR, {
+    acceptanceFile: options.acceptance ?? DEFAULT_ACCEPTANCE_FILE,
     overwriteTags: options.overwriteTags,
     onProgress,
   });
 export const rollbackAction = (options: CliOptions, onProgress: OnProgress) =>
-  rollbackRun(options.run ?? './runs/default', { onProgress });
+  rollbackRun(options.run ?? DEFAULT_RUN_DIR, { onProgress });
 
 /** 统一输出边界：进度走 stderr，结果走 stdout，异常也必须恢复终端状态。 */
 export async function runAction(action: CliAction, options: CliOptions, name: string) {

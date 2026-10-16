@@ -20,38 +20,41 @@ async function query<T>(
   }
 }
 
-export async function tagsFor(
-  api: Api,
-  name: string,
-  registry: string,
-  version?: string,
-): Promise<Tags> {
-  if (!version) {
-    const versions = await query<string | string[]>(
-      api,
-      ['view', `${name}@*`, 'version', '--json'],
-      registry,
-      name,
+export async function tagsFor(api: Api, name: string, registry: string): Promise<Tags> {
+  let output: string;
+  try {
+    // npm 11.19 的 ls 即使传 --json 也输出逐行文本；包级读取不依赖 latest 或某个版本。
+    output = await api.npmCommand(
+      ['dist-tag', 'ls', name, '--json', '--loglevel=error', '--color=false'],
+      { registry, packageName: name },
     );
-    if (versions === null) return {};
-    const values = Array.isArray(versions) ? versions : [versions];
-    if (!values.length || values.some((value) => typeof value !== 'string' || !value))
-      throw failure(`Cannot determine an existing version for ${name}`);
-    version = values.at(-1);
+  } catch (error) {
+    const noTags =
+      !error.npmCode &&
+      !error.code &&
+      error.message
+        ?.split(/\r?\n/)
+        .some(
+          (line: string) =>
+            line.replace(/^(?:\S+ failed: )?(?:npm error )?/, '') ===
+            `No dist-tags found for ${name}`,
+        );
+    if (missing(error) || noTags) return {};
+    throw failure(`Registry query failed for ${name}`, error);
   }
-  const tags = await query<Tags>(
-    api,
-    ['view', common.packageSpec({ name, version: version! }), 'dist-tags', '--json'],
-    registry,
-    name,
-  );
-  if (
-    !tags ||
-    typeof tags !== 'object' ||
-    Array.isArray(tags) ||
-    Object.values(tags).some((value) => typeof value !== 'string')
-  )
+  const tags: Tags = {};
+  try {
+    for (const line of output.replace(/\r?\n$/, '').split(/\r?\n/)) {
+      const match = /^([^\s:]+): ([^\s]+)$/.exec(line);
+      if (!match || Object.hasOwn(tags, match[1])) throw failure('Invalid tag line');
+      const [, tag, version] = match;
+      common.validateDistTag(tag);
+      common.validateIdentity({ name, version });
+      Object.defineProperty(tags, tag, { value: version, enumerable: true });
+    }
+  } catch {
     throw failure(`Invalid dist-tag snapshot for ${name}`);
+  }
   return tags;
 }
 

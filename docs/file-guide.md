@@ -12,7 +12,7 @@ src/
 │   ├── installed/   # 安装树路径边界、内容摘要与递归扫描
 │   └── publishing/  # 预检、run、版本、tag 与验收提升
 ├── lib/       # npm 子进程、制品、文件、身份和安全校验
-└── config.ts  # 已验证的工具版本与运行常量
+└── config.ts  # 已验证的工具版本、CLI 默认值与运行常量
 test/          # Vitest 单元与真实 npm 集成测试
 docs/          # VitePress 文档站
 ```
@@ -23,7 +23,7 @@ docs/          # VitePress 文档站
 | `src/cli/program.ts`   | 按 Vite 风格链式声明命令，处理单值末次覆盖、批量参数、互斥校验及异步 action 错误           | `createProgram`、`registerCollectionCommands`、`registerPublishingCommands`             |
 | `src/cli/actions.ts`   | 将 CLI 参数映射到业务函数，合并批量输入、选择默认输入/私服端点，统一结果输出与进度生命周期 | `packageInputs`、各命令 action、`runAction`                                             |
 | `src/cli/output.ts`    | 终端中文结果摘要、管道/显式 JSON 和常见错误处理提示                                        | `writeResult`、`writeFailure`；保留 JSON 数据结构及脱敏                                 |
-| `src/config.ts`        | 固定已验证的 npm 打包版本、默认源 registry 和输出上限                                      | `PACK_NPM_VERSION`、`OUTPUT_LIMIT`                                                      |
+| `src/config.ts`        | 固定已验证的 npm 打包版本、CLI 默认路径、默认源 registry 和输出上限                        | 命令声明与 CLI action 共享默认值；`PACK_NPM_VERSION`、`OUTPUT_LIMIT`                    |
 | `src/lib/index.ts`     | 公共能力导出入口，统一导出共享能力                                                         | 实现在 `src/lib/`，此文件不实现业务流程                                                 |
 | `src/core/collect.ts`  | 收集与恢复入口：组织解析、取包、资源复制、冻结及失败清理                                   | `collect`、`recover`；具体步骤在 `collection/`                                          |
 | `src/core/recovery.ts` | 安装树入口：组织自动定位、盘点、冲突汇总及独立 staging                                     | `inventoryModules`、`stageInstance`；递归扫描在 `installed/`                            |
@@ -58,6 +58,8 @@ docs/          # VitePress 文档站
 | `src/core/publishing/promotion.ts`  | 绑定验收证据，生成正式 tag 变更计划，应用并复核提升结果         |
 
 这些模块按实际步骤拆分，不新增通用工作流框架。对外仍从原来的 `collect.ts`、`recovery.ts`、`publish.ts` 导入；CLI 和测试无需了解内部文件布局。
+
+CLI action 未指定资源配置时自动采用当前目录已有的 `resources.json`；文件不存在则保持审查待完成。恢复输出在创建前检查其与源安装树及获准链接实体的路径关系，拒绝写入原树。默认配置不会自动生成资源审查或业务验收证据，也不会开启重打包、恢复导入或 tag 覆盖许可。
 
 ## 2. 测试
 

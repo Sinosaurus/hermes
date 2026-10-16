@@ -2,7 +2,13 @@
 import { readFileSync } from 'node:fs';
 import { cac, type CAC } from 'cac';
 import type { CliAction, CliOptions } from './types.js';
-import { DEFAULT_SOURCE_REGISTRY } from '../config.js';
+import {
+  DEFAULT_SOURCE_REGISTRY,
+  DEFAULT_BUNDLE_DIR,
+  DEFAULT_RUN_DIR,
+  DEFAULT_ACCEPTANCE_FILE,
+  DEFAULT_RESOURCES_FILE,
+} from '../config.js';
 import * as actions from './actions.js';
 import { writeFailure } from './output.js';
 
@@ -69,12 +75,15 @@ async function executeAction(name: string, action: CliAction, raw: CliOptions) {
 function registerCollectionCommands(cli: CAC) {
   cli
     .command('collect', '按项目锁文件或批量根包收集原始制品')
-    .option('--project <dir>', '含 npm v2/v3 锁文件的项目')
+    .option('--project <dir>', '含 npm v2/v3 锁文件的项目，无显式输入和包列表时读取当前目录')
     .option('--package <spec>', 'registry 根规格，可重复', { type: [] })
-    .option('--packages-file <json>', '根规格 JSON 数组')
-    .option('--out <dir>', '不存在的输出目录', { default: './bundle' })
+    .option('--packages-file <json>', '根规格 JSON 数组，无显式输入时读取 ./packages.json')
+    .option('--out <dir>', '不存在的输出目录', { default: DEFAULT_BUNDLE_DIR })
     .option('--registry <url>', '源 registry', { default: DEFAULT_SOURCE_REGISTRY })
-    .option('--resources <json>', '本地资源与审查记录')
+    .option(
+      '--resources <json>',
+      `本地资源与审查记录，默认读取 ./${DEFAULT_RESOURCES_FILE}（若存在）`,
+    )
     .option('--allow-host <host>', '额外 tarball 主机，可重复', { type: [] })
     .option(
       '--install-flag <flag>',
@@ -86,7 +95,7 @@ function registerCollectionCommands(cli: CAC) {
   cli
     .command('inventory', '只读盘点嵌套 npm/Yarn/pnpm 安装树')
     .option('--node-modules <dir>', '安装树入口，默认从当前目录向上查找')
-    .option('--out <json>', '不存在的盘点文件')
+    .option('--out <json>', '不存在的盘点文件，默认只输出结果')
     .option('--allow-link-root <dir>', '其他 node_modules 内的链接实体目录，可重复', {
       type: [],
     })
@@ -95,10 +104,13 @@ function registerCollectionCommands(cli: CAC) {
   cli
     .command('recover', '回源取原制品，或显式从安装树重打包')
     .option('--node-modules <dir>', '安装树入口，默认从当前目录向上查找')
-    .option('--out <dir>', '不存在的输出目录', { default: './bundle' })
-    .option('--registry <url>', '原始制品源 registry，默认 https://registry.npmjs.org/')
-    .option('--repack', '独立副本禁钩子打包，使用专用恢复仓库')
-    .option('--resources <json>', '本地资源与审查记录')
+    .option('--out <dir>', '不存在的输出目录', { default: DEFAULT_BUNDLE_DIR })
+    .option('--registry <url>', `原始制品源 registry，默认 ${DEFAULT_SOURCE_REGISTRY}`)
+    .option('--repack', '独立副本禁钩子打包，使用专用恢复仓库', { default: false })
+    .option(
+      '--resources <json>',
+      `本地资源与审查记录，默认读取 ./${DEFAULT_RESOURCES_FILE}（若存在）`,
+    )
     .option('--allow-host <host>', '额外 tarball 主机，可重复', { type: [] })
     .option('--allow-link-root <dir>', '其他 node_modules 内的链接实体目录，可重复', {
       type: [],
@@ -107,7 +119,7 @@ function registerCollectionCommands(cli: CAC) {
 
   cli
     .command('verify', '校验冻结 bundle 的文件、摘要和包身份')
-    .option('--bundle <dir>', '冻结交付目录', { default: './bundle' })
+    .option('--bundle <dir>', '冻结交付目录', { default: DEFAULT_BUNDLE_DIR })
     .action((options: CliOptions) => executeAction('verify', actions.verifyAction, options));
 }
 
@@ -121,25 +133,27 @@ function registerPublishingCommands(cli: CAC) {
         name,
         name === 'plan' ? '只读检查目标内容和 tag 差异' : '临时 tag 导入精确版本，支持续跑',
       )
-      .option('--bundle <dir>', '冻结交付目录', { default: './bundle' })
+      .option('--bundle <dir>', '冻结交付目录', { default: DEFAULT_BUNDLE_DIR })
       .option('--registry <url>', '托管写端点，默认读取 npm registry 配置')
       .option('--read-registry <url>', '业务实际读端点，默认同写端点')
-      .option('--recovery', '明确接受恢复制品及隔离恢复仓库');
+      .option('--recovery', '明确接受恢复制品及隔离恢复仓库', { default: false });
     if (name === 'import')
-      cmd.option('--run <dir>', 'bundle 外的运行状态目录', { default: './runs/default' });
+      cmd.option('--run <dir>', 'bundle 外的运行状态目录', { default: DEFAULT_RUN_DIR });
     cmd.action((options: CliOptions) => executeAction(name, action, options));
   }
 
   cli
     .command('promote', '实际验收后提升正式 tag，清理本 run 临时 tag')
-    .option('--run <dir>', '已有运行状态目录', { default: './runs/default' })
-    .option('--acceptance <json>', '与批次和端点绑定的验收记录', { default: './acceptance.json' })
-    .option('--overwrite-tags', '允许覆盖原有不同的正式 tag')
+    .option('--run <dir>', '已有运行状态目录', { default: DEFAULT_RUN_DIR })
+    .option('--acceptance <json>', '与批次和端点绑定的验收记录', {
+      default: DEFAULT_ACCEPTANCE_FILE,
+    })
+    .option('--overwrite-tags', '允许覆盖原有不同的正式 tag', { default: false })
     .action((options: CliOptions) => executeAction('promote', actions.promoteAction, options));
 
   cli
     .command('rollback', '条件恢复 tag，保留已上传版本')
-    .option('--run <dir>', '已有运行状态目录', { default: './runs/default' })
+    .option('--run <dir>', '已有运行状态目录', { default: DEFAULT_RUN_DIR })
     .action((options: CliOptions) => executeAction('rollback', actions.rollbackAction, options));
 }
 
@@ -149,7 +163,7 @@ export function createProgram() {
     readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
   );
   const cli = cac('nova-hm')
-    .option('--json', '始终输出完整 JSON，默认终端摘要、重定向 JSON')
+    .option('--json', '始终输出完整 JSON，默认终端摘要、重定向 JSON', { default: false })
     .option('--progress <mode>', 'stderr 进度：auto/plain/none', { default: 'auto' });
 
   registerCollectionCommands(cli);

@@ -83,4 +83,14 @@ test('failure output redacts secrets and adds an actionable hint in terminal and
   assert.equal(result.status, 'failed');
   assert.match(result.hint, /不会覆盖/);
   assert.doesNotMatch(result.message, /secret-token/);
+  const unsafe = capture(true);
+  writeFailure(
+    Object.assign(new Error('Recovery output must be separate from the installed tree'), {
+      code: 'unsafe-output-path',
+    }),
+    {},
+    unsafe,
+    true,
+  );
+  assert.match(unsafe.text(), /--out.*node_modules.*之外/);
 });
