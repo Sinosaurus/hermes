@@ -79,9 +79,11 @@ nova-hm --help
 nova-hm --version
 ```
 
-安装后可直接在业务目录或批次工作目录调用 `nova-hm`，无需下载源码、构建或执行 `npm link`。记录 `nova-hm --version` 的结果，内外网使用同一已验收版本；需要固定版本时安装 `@nova-cbb/hermes@<version>`，将 `<version>` 替换为实际发布版本。npm 可选安装参数见[快速开始](index.md#安装一次)。当前仓库仍需完成发布准备，见[开发指南](development.md#npm-发布准备)。
+安装后可直接在业务目录或批次工作目录调用 `nova-hm`，无需下载源码、构建或执行 `npm link`。记录 `nova-hm --version` 的结果，内外网使用同一已验收版本；需要固定版本时安装 `@nova-cbb/hermes@<version>`，将 `<version>` 替换为实际发布版本。npm 可选安装参数见[快速开始](index.md#安装一次)，源码发布流程见[开发指南](development.md#npm-发布准备)。
 
 源码使用 TypeScript；质量检查使用 Oxlint/Oxfmt，回归测试使用 Vitest，文档站使用 VitePress。开发命令见[开发指南](development.md)。
+
+发布包通过 `files: ["dist", "README.md"]` 包含完整编译产物，npm 同时带入包元数据、README 和已有许可文件。`prepack` 在打包/发布时执行 `npm run build`，从 registry 安装工具的使用者无需 `tsc`。完整源码及开发/架构文档在 [GitHub 仓库](https://github.com/Sinosaurus/hermes)维护。
 
 CLI 的直接依赖采用精确版本，源码开发和构建的依赖由 `package-lock.json` 固定。npm 发布包不包含该锁文件，不能据此承诺全局安装的传递依赖树完全一致；内网须准备并验收实际安装所需的全部生产依赖。CLI 采用与 Vite 一致的 `cac`；校验库采用 npm 生态实现。打包规则见 [npm package.json 文档](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#files)。
 

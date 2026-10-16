@@ -12,7 +12,7 @@ nova-hm --help
 nova-hm --version
 ```
 
-收集和导入流程、npm 可选安装参数见[快速开始](index.md#安装一次)。以下命令用于源码开发；当前仓库的发布准备要求见下文。
+收集和导入流程、npm 可选安装参数见[快速开始](index.md#安装一次)。以下命令用于源码开发；npm 包的发布流程见下文。
 
 ## 源码安装与开发
 
@@ -77,23 +77,28 @@ npm run check           # 以上检查及文档构建
 
 ## npm 发布准备
 
-当前 `package.json` 仍有 `private: true`，尚未配置 `files` 或 `prepack`；本文的用户安装命令在维护者完成发布后适用。发布前需由维护者处理发布字段与产物范围：
+`package.json` 已配置包说明、关键词、GitHub 仓库、README 首页和 issue 地址，`publishConfig` 指定公开发布到 `https://registry.npmjs.org/`；采用 MIT 许可并提供 `LICENSE`，`bin` 继续提供 `nova-hm`，Node 要求由 `engines` 声明。发布前确认版本及 scope 发布权限。
 
-- 解除 `private: true` 对发布的阻止，确认包名、版本、目标 registry 和 scope 的发布权限；公开发布时明确选择公开访问级别。
-- 明确打包包含完整 `dist/` 及必要的包元数据和说明文件，可用 `files` 限定发布范围；若保留 README 中的文档链接，也应保留对应文档与图片。通过 `pack` 文件清单确认实际产物，不只检查 `bin` 入口。
-- 没有 `prepack` 时须手工构建；即使后续增加该钩子，以下禁钩子打包命令仍要求先构建。发布包须包含可直接运行的编译产物，不能依赖安装时编译。
+`files: ["dist", "README.md"]` 限定发布范围；npm 同时带入 `package.json`、README 和已有的许可文件。源码、测试及完整开发/架构文档保留在 [GitHub 仓库](https://github.com/Sinosaurus/hermes)，README 提供使用说明和文档入口。字段与打包规则见 [npm package.json 文档](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)。
 
-字段与打包范围规则见 [npm package.json 文档](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)。准备好发布字段后执行：
+`prepack` 执行 `npm run build`，在源码目录正常执行 `npm pack`（含 `--dry-run`）会先生成 `dist/`。该构建由打包/发布者执行，从 registry 安装发布包的使用者无需 `tsc`，也不依赖安装时编译。
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
-npm run build
 npm run check
-npm pack --dry-run --ignore-scripts --json
-npm pack --ignore-scripts --json
+npm pack --dry-run
+npm pack
 ```
 
-检查 pack 的文件清单和实际 `.tgz`：必须包含 `dist/cli/index.js` 及它导入的全部编译模块，核对包名、版本、`bin` 和 Node 要求；不得夹带 bundle/run、凭据或本地缓存。随后在空临时目录禁钩子安装该 `.tgz`，验证 `nova-hm --help`、`--version`，避免源码目录现存依赖掩盖缺失产物。`pack` 只生成本地制品，不代表已发布或已通过目标私服验收。
+如果打包时指定 `--ignore-scripts`，`prepack` 不会执行，须先手动运行 `npm run build`。
+
+检查 pack 的文件清单和实际 `.tgz`：必须包含 `dist/cli/index.js` 及它导入的全部编译模块，核对包名、版本、`bin` 和 Node 要求；不得夹带 bundle/run、凭据或本地缓存。随后在空临时目录安装该 `.tgz`，验证 `nova-hm --help`、`--version`，避免源码目录现存依赖掩盖缺失产物。确认后由维护者发布已核验的制品，将 `<version>` 替换为实际版本：
+
+```sh
+npm publish './nova-cbb-hermes-<version>.tgz'
+```
+
+`pack` 只生成本地制品，不代表已发布或已通过目标私服验收。
 
 生产依赖仍由 npm 安装，`package-lock.json` 不随 npm 包发布，不能用源码锁文件承诺用户全局安装的传递依赖完全一致。发布版本及实际生产依赖应作为独立工具批次冻结、导入内网并验证，业务 bundle 不包含它们。
 

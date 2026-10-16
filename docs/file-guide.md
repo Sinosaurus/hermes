@@ -78,14 +78,16 @@ CLI action 未指定资源配置时自动采用当前目录已有的 `resources.
 
 | 文件                                              | 作用                                                                            |
 | ------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `package.json`                                    | 项目元数据、Node 最低版本、CLI bin、测试命令及精确直接依赖                      |
+| `package.json`                                    | 包与仓库元数据、Node 要求、CLI bin、精确依赖，以及 files/prepack/公开发布配置   |
 | `package-lock.json`                               | 固定直接/传递依赖版本、获取地址及完整性；通过 `npm ci --ignore-scripts` 安装    |
 | `.gitignore`                                      | 排除依赖目录、缓存、默认 bundle/run 及系统临时文件，防止制品和状态误提交        |
-| `README.md`                                       | 简短使用首页：一次准备、收集/恢复、内网导入、默认值及结果展示                   |
+| `README.md`                                       | npm 包主要使用说明：安装、收集/恢复、内网导入、默认值及结果展示                 |
 | [docs/operations.md](operations.md)               | 完整技术方案、操作手册、平台/资源/scripts、恢复和验收要求                       |
 | [docs/architecture.md](architecture.md)           | 当前 CLI 的实现架构、支持边界、命令和实际 JSON 结构示例、工具离线准备及验证结果 |
 | [docs/offline-npm-flow.svg](offline-npm-flow.svg) | 可独立查看的流程图，展示收集、冻结、交接、导入、验收和 tag 提升                 |
 | [docs/file-guide.md](file-guide.md)               | 本文件：逐文件职责、主要入口与阅读顺序                                          |
+
+npm 发布包包含 `dist/`、包元数据、README 和已有许可文件；完整源码及开发/架构文档通过 [GitHub 仓库](https://github.com/Sinosaurus/hermes)查阅。`prepack` 在打包/发布时构建，使用者从 registry 安装即可运行。
 
 工具链和站点配置职责：
 
@@ -99,7 +101,7 @@ CLI action 未指定资源配置时自动采用当前目录已有的 `resources.
 | `docs/.vitepress/theme/index.ts` | 复用独立 Iris 插件主题，不保留本地预览组件                     |
 | `docs/index.md`                  | 文档站快速开始首页                                             |
 | `docs/development.md`            | 安装、开发、构建、质量检查与离线工具交付                       |
-| `dist/`                          | TypeScript 自动构建产物，不手工修改、不提交                    |
+| `dist/`                          | TypeScript 自动构建并随 npm 包发布，不手工修改、不提交 Git     |
 
 Mermaid 与图片预览使用 npm 包 `vitepress-plugin-mermaid-image-preview`；源码、测试和演示在[独立仓库](https://github.com/Sinosaurus/vitepress-plugin-mermaid-image-preview)维护，不属于本仓库目录。
 

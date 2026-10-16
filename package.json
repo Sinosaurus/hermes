@@ -1,15 +1,41 @@
 {
   "name": "@nova-cbb/hermes",
   "version": "0.1.0",
-  "private": true,
+  "description": "收集 npm 包及依赖、恢复安装树，并向内网私服批量导入的命令行工具",
+  "keywords": [
+    "cli",
+    "migration",
+    "npm",
+    "offline",
+    "registry"
+  ],
+  "homepage": "https://github.com/Sinosaurus/hermes#readme",
+  "bugs": {
+    "url": "https://github.com/Sinosaurus/hermes/issues"
+  },
+  "license": "MIT",
+  "author": "Sinosaurus",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sinosaurus/hermes.git"
+  },
   "bin": {
     "nova-hm": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "dev": "tsx src/cli/index.ts",
     "cli": "tsx src/cli/index.ts",
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt .",
