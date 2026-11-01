@@ -1,5 +1,7 @@
 # Hermes：实现架构与运行指南
 
+> 本地增强版增加跨平台 optional 依赖补齐、显式远程资源下载和离线导出，详见 [跨隔离网采集增强](./airgap-enhancements.md)。本文历史的“仅本地资源/不下载 URL”限制由该说明更新；任意脚本自动识别和自动部署仍不支持。
+
 日期：2026-10-12 · 首版 CLI · Ponytail full
 
 本项目包名为 `@nova-cbb/hermes`，命令为 `nova-hm`。用一个 Node.js 命令行程序完成收集、校验、导入和 tag 恢复。依赖解析、tarball 获取和发布协议交给 npm；清单和执行状态保存为 JSON。命令和参数由 cac 声明，通用校验交给 npm 生态库；不引入数据库、常驻服务或 Web 管理端。

@@ -22,7 +22,13 @@ function transferSummary(stats?: TransferStats) {
 
 export function resultSummary(action: string, result: CommandResult, options: CliOptions = {}) {
   let lines;
-  if ('bundle' in result) {
+  if ('exportDirectory' in result) {
+    lines = [
+      `资源导出完成：${result.resources} 项资源，${result.files} 个文件`,
+      `暂存目录：${result.exportDirectory}`,
+      '未上传到静态服务；请按 resource-map.json 配置并实际断网验收。',
+    ];
+  } else if ('bundle' in result) {
     lines = [
       `${action === 'verify' ? '校验通过' : '收集完成'}：${result.packages} 个包，${result.resources} 项资源`,
       `交付目录：${result.bundle}`,

@@ -21,7 +21,7 @@ const usageHints: Record<string, string> = {
 };
 
 const repeatedOptions = new Set(['package', 'allowHost', 'allowLinkRoot', 'installFlag']);
-const booleanOptions = new Set(['json', 'repack', 'recovery', 'overwriteTags']);
+const booleanOptions = new Set(['json', 'repack', 'recovery', 'overwriteTags', 'allPlatforms']);
 
 /** 参考 Vite：单值选项取最后一次；本工具的批量选项保留全部值。 */
 function normalizeOptions(options: CliOptions): CliOptions {
@@ -79,10 +79,13 @@ function registerCollectionCommands(cli: CAC) {
     .option('--package <spec>', 'registry 根规格，可重复', { type: [] })
     .option('--packages-file <json>', '根规格 JSON 数组，无显式输入时读取 ./packages.json')
     .option('--out <dir>', '不存在的输出目录', { default: DEFAULT_BUNDLE_DIR })
+    .option('--all-platforms', '补齐元数据声明的跨平台 optional 依赖闭包，不执行安装脚本', {
+      default: false,
+    })
     .option('--registry <url>', '源 registry', { default: DEFAULT_SOURCE_REGISTRY })
     .option(
       '--resources <json>',
-      `本地资源与审查记录，默认读取 ./${DEFAULT_RESOURCES_FILE}（若存在）`,
+      `本地/远程资源与审查记录，默认读取 ./${DEFAULT_RESOURCES_FILE}（若存在）`,
     )
     .option('--allow-host <host>', '额外 tarball 主机，可重复', { type: [] })
     .option(
@@ -109,13 +112,22 @@ function registerCollectionCommands(cli: CAC) {
     .option('--repack', '独立副本禁钩子打包，使用专用恢复仓库', { default: false })
     .option(
       '--resources <json>',
-      `本地资源与审查记录，默认读取 ./${DEFAULT_RESOURCES_FILE}（若存在）`,
+      `本地/远程资源与审查记录，默认读取 ./${DEFAULT_RESOURCES_FILE}（若存在）`,
     )
     .option('--allow-host <host>', '额外 tarball 主机，可重复', { type: [] })
     .option('--allow-link-root <dir>', '其他 node_modules 内的链接实体目录，可重复', {
       type: [],
     })
     .action((options: CliOptions) => executeAction('recover', actions.recoverAction, options));
+
+  cli
+    .command('export-resources', '离线导出静态资源暂存目录与 URL/环境变量映射，不上传')
+    .option('--bundle <dir>', '已冻结交付目录', { default: DEFAULT_BUNDLE_DIR })
+    .option('--out <dir>', '不存在的暂存目录', { default: './static-export' })
+    .option('--base-url <url>', '现有内网静态服务根地址')
+    .action((options: CliOptions) =>
+      executeAction('export-resources', actions.exportResourcesAction, options),
+    );
 
   cli
     .command('verify', '校验冻结 bundle 的文件、摘要和包身份')

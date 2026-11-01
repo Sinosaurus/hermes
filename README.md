@@ -102,3 +102,7 @@ nova-hm recover --help
 - [问题反馈](https://github.com/Sinosaurus/hermes/issues)
 
 [MIT License](https://github.com/Sinosaurus/hermes/blob/main/LICENSE)
+
+## 跨平台与外部资源采集增强
+
+新增 `collect --all-platforms`、`resources.json` 的显式 URL + SHA-256 下载、`export-resources` 离线静态目录导出。参见 [跨隔离网采集增强](docs/airgap-enhancements.md)，包括完整流程、支持边界和验收要求。
