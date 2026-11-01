@@ -10,6 +10,8 @@ export interface CliOptions {
   out?: string;
   registry?: string;
   resources?: string;
+  allPlatforms?: boolean;
+  baseUrl?: string;
   allowHost?: string[];
   installFlag?: string[];
   nodeModules?: string;
@@ -30,6 +32,7 @@ export type CliAction = (options: CliOptions, onProgress: OnProgress) => Promise
 
 export type CommandResult =
   | Inventory
+  | Awaited<ReturnType<typeof import('../core/resource-export.js').exportResources>>
   | Awaited<ReturnType<typeof import('./actions.js').collectAction>>
   | Awaited<ReturnType<typeof import('../core/publish.js').planImport>>
   | Awaited<ReturnType<typeof import('../core/publish.js').importBundle>>;

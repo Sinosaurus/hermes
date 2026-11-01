@@ -26,6 +26,7 @@ import {
   validateInstallFlags,
   type ResolvedInput,
 } from './collection/resolution.js';
+import { expandPlatformInputs } from './collection/platforms.js';
 import { addOriginal } from './collection/originals.js';
 import { addResources } from './collection/resources.js';
 import { addRepacked } from './collection/repack.js';
@@ -67,6 +68,7 @@ export async function collect({
   allowHosts = [],
   resourcesFile,
   installFlags = [],
+  allPlatforms = false,
   onProgress,
 }: CollectOptions) {
   if ((!project && !specs.length) || (project && specs.length))
@@ -83,6 +85,16 @@ export async function collect({
       ? [await resolveProject(project, work, registry, installFlags, bundle)]
       : await resolveRoots(specs, work, registry, installFlags, bundle);
     if (project) bundle.report({ phase: 'resolve', completed: 1, total: 1 });
+    bundle.manifest.collection = {
+      optionalClosure: allPlatforms ? 'registry-expanded' : 'lock-only',
+    };
+    if (allPlatforms) {
+      const expanded = await expandPlatformInputs(inputs, work, registry, installFlags, bundle);
+      inputs.push(...expanded.inputs);
+      const report = 'inputs/platform-closure.json';
+      await writeJson(path.join(bundle.out, report), expanded.report);
+      bundle.manifest.collection.report = report;
+    }
     bundle.stats.total = new Set(
       inputs.flatMap((input) => input.parsed.entries.map(packageSpec)),
     ).size;

@@ -22,6 +22,7 @@ export default defineConfig({
     ],
     sidebar: [
       { text: '快速开始', link: '/' },
+      { text: '跨隔离网采集增强', link: '/airgap-enhancements' },
       { text: '实现架构与参数', link: '/architecture' },
       { text: '技术方案与操作手册', link: '/operations' },
       { text: '开发与校验', link: '/development' },

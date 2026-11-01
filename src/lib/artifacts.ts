@@ -92,7 +92,7 @@ async function verifyPackages(directory: string, manifest: Manifest) {
   }
 }
 
-function verifyDeclarations(manifest: Manifest) {
+async function verifyDeclarations(directory: string, manifest: Manifest) {
   if (
     !Array.isArray(manifest.tagPlan) ||
     !Array.isArray(manifest.resources) ||
@@ -117,13 +117,22 @@ function verifyDeclarations(manifest: Manifest) {
     )
       throw new Error('Invalid tag plan');
   }
+  if (
+    manifest.collection &&
+    (!['lock-only', 'registry-expanded'].includes(manifest.collection.optionalClosure) ||
+      (manifest.collection.report !== undefined &&
+        !Object.hasOwn(manifest.files, manifest.collection.report)) ||
+      (manifest.collection.optionalClosure === 'registry-expanded' && !manifest.collection.report))
+  )
+    throw new Error('Invalid collection provenance');
   const resourceIds = new Set();
   for (const resource of manifest.resources) {
     if (
       !resource ||
       typeof resource.id !== 'string' ||
       !/^[A-Za-z0-9_-]+$/.test(resource.id) ||
-      resourceIds.has(resource.id) ||
+      resourceIds.has(resource.id.toLowerCase()) ||
+      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(resource.id) ||
       typeof resource.instructions !== 'string' ||
       !resource.instructions.trim() ||
       !Array.isArray(resource.targets) ||
@@ -135,7 +144,83 @@ function verifyDeclarations(manifest: Manifest) {
       )
     )
       throw new Error('Invalid resource declaration or missing file');
-    resourceIds.add(resource.id);
+    if (
+      resource.targets.some(
+        (target) =>
+          !target ||
+          typeof target.os !== 'string' ||
+          !target.os.trim() ||
+          typeof target.cpu !== 'string' ||
+          !target.cpu.trim() ||
+          (['node', 'nodeAbi', 'libc'] as const).some(
+            (key) =>
+              target[key] !== undefined && (typeof target[key] !== 'string' || !target[key].trim()),
+          ),
+      )
+    )
+      throw new Error('Invalid resource target declaration');
+    if (resource.files.some((file) => !file.startsWith(`resources/${resource.id}/`)))
+      throw new Error('Resource file is outside its declared directory');
+    if (
+      resource.version !== undefined &&
+      (typeof resource.version !== 'string' || !resource.version.trim())
+    )
+      throw new Error('Invalid resource version');
+    if (
+      resource.environment !== undefined &&
+      (!resource.environment ||
+        typeof resource.environment !== 'object' ||
+        Array.isArray(resource.environment) ||
+        Object.entries(resource.environment).some(
+          ([key, value]) =>
+            !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
+            typeof value !== 'string' ||
+            !value.trim() ||
+            /[\r\n\0]/.test(value),
+        ))
+    )
+      throw new Error('Invalid resource environment hints');
+    if (resource.download !== undefined) {
+      if (
+        !resource.download ||
+        typeof resource.download !== 'object' ||
+        Array.isArray(resource.download)
+      )
+        throw new Error('Invalid resource download provenance');
+      const item = resource.download;
+      let url: URL;
+      try {
+        url = new URL(item.url);
+      } catch {
+        throw new Error('Invalid resource download provenance');
+      }
+      if (
+        (url.protocol !== 'https:' &&
+          !(
+            url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+          )) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        typeof item.filename !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(item.filename) ||
+        item.filename.endsWith('.') ||
+        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(item.filename) ||
+        item.filename.includes('/') ||
+        item.filename.includes('\\') ||
+        !Number.isSafeInteger(item.size) ||
+        item.size < 0 ||
+        !/^[a-f0-9]{64}$/.test(item.sha256) ||
+        resource.files.length !== 1 ||
+        resource.files[0] !== `resources/${resource.id}/${item.filename}` ||
+        manifest.files[resource.files[0]] !== item.sha256
+      )
+        throw new Error('Invalid resource download provenance');
+      if ((await stat(await safePath(directory, resource.files[0]))).size !== item.size)
+        throw new Error('Resource download size differs from provenance');
+    }
+    resourceIds.add(resource.id.toLowerCase());
   }
   const review = manifest.resourceReview;
   if (
@@ -187,6 +272,6 @@ export async function verifyBundle(directory: string): Promise<VerifiedBundle> {
   if ((await readFile(await safePath(directory, 'checksums.sha256'), 'utf8')) !== expectedChecksums)
     throw new Error('Invalid checksums.sha256');
   await verifyPackages(directory, manifest);
-  verifyDeclarations(manifest);
+  await verifyDeclarations(directory, manifest);
   return { manifest, manifestDigest };
 }

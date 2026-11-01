@@ -6,11 +6,12 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { recover } from '../src/core/collect.js';
+import { collect, recover } from '../src/core/collect.js';
+import { exportResources } from '../src/core/resource-export.js';
 import { importBundle, rollbackRun } from '../src/core/publish.js';
 import { command, npmCommand, packArtifact, readArtifact, readJson } from '../src/lib/index.js';
 
-async function fixture(root, name, version, marker, dependencies = {}) {
+async function fixture(root, name, version, marker, dependencies = {}, extraMetadata = {}) {
   const directory = path.join(root, name.replace(/[^a-z0-9]/gi, '_'), version);
   const packageDirectory = path.join(directory, 'package');
   await mkdir(packageDirectory, { recursive: true });
@@ -19,6 +20,7 @@ async function fixture(root, name, version, marker, dependencies = {}) {
     name,
     version,
     dependencies,
+    ...extraMetadata,
     scripts: Object.fromEntries(
       [
         'prepare',
@@ -426,5 +428,152 @@ test(
         (await readArtifact(path.join(root, 'bundle', pkg.file))).packageJson.scripts.prepare,
       );
     await assert.rejects(access(marker), { code: 'ENOENT' });
+  },
+);
+
+test(
+  'all-platform collection freezes remote resources, exports and imports after upstream closes',
+  { timeout: 120_000 },
+  async (t) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'hermes-offline-end-to-end-'));
+    t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const source = await registry(),
+      target = await registry();
+    let sourceClosed = false;
+    t.onTestFinished(() =>
+      Promise.all([sourceClosed ? Promise.resolve() : source.close(), target.close()]),
+    );
+    const asset = Buffer.from('independent vendor release bytes');
+    const assetServer = http.createServer((_req, res) => res.end(asset));
+    await new Promise<void>((resolve) => assetServer.listen(0, '127.0.0.1', resolve));
+    let assetClosed = false;
+    const closeAsset = () =>
+      new Promise<void>((resolve) => {
+        assetServer.closeAllConnections();
+        assetServer.close(() => resolve());
+      });
+    t.onTestFinished(() => (assetClosed ? undefined : closeAsset()));
+    const address = assetServer.address();
+    assert.ok(address && typeof address === 'object');
+    const assetUrl = `http://127.0.0.1:${address.port}/vendor.bin`;
+    const previous = {
+      NPM_CONFIG_USERCONFIG: process.env.NPM_CONFIG_USERCONFIG,
+      OFFLINE_NPM_CACHE: process.env.OFFLINE_NPM_CACHE,
+    };
+    const userconfig = path.join(root, 'npmrc');
+    await writeFile(
+      userconfig,
+      `//127.0.0.1:${new URL(target.base).port}/:_authToken=local-fixture-token\nfetch-retries=0\nfetch-timeout=5000\n`,
+    );
+    process.env.NPM_CONFIG_USERCONFIG = userconfig;
+    process.env.OFFLINE_NPM_CACHE = path.join(root, 'source-cache');
+    t.onTestFinished(() => {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    });
+    const marker = path.join(root, 'hooks-must-not-run');
+    const foreignOs = process.platform === 'win32' ? 'linux' : 'win32';
+    const common = await fixture(root, 'offline-common', '1.0.0', marker);
+    const foreign = await fixture(
+      root,
+      'offline-foreign',
+      '1.0.0',
+      marker,
+      { 'offline-common': '1.0.0' },
+      { os: [foreignOs], cpu: ['arm64'] },
+    );
+    const app = await fixture(
+      root,
+      'offline-app',
+      '1.0.0',
+      marker,
+      { 'offline-common': '1.0.0' },
+      { optionalDependencies: { 'offline-foreign': '1.0.0' } },
+    );
+    for (const item of [common, foreign, app]) source.seed(item, { latest: '1.0.0' });
+    const resourcesFile = path.join(root, 'resources.json');
+    await writeFile(
+      resourcesFile,
+      JSON.stringify({
+        resources: [
+          {
+            id: 'vendor',
+            version: '1.0.0',
+            targets: [{ os: foreignOs, cpu: 'arm64' }],
+            instructions: '静态服务部署后显式配置环境变量，不执行资源文件。',
+            environment: { VENDOR_DOWNLOAD_URL: '{{baseUrl}}/resources/vendor/vendor.bin' },
+            download: {
+              url: assetUrl,
+              filename: 'vendor.bin',
+              sha256: createHash('sha256').update(asset).digest('hex'),
+            },
+          },
+        ],
+      }),
+    );
+    const bundle = path.join(root, 'bundle');
+    const result = await collect({
+      specs: ['offline-app@1.0.0'],
+      out: bundle,
+      registry: source.base,
+      resourcesFile,
+      allPlatforms: true,
+    });
+    assert.deepEqual(result.manifest.packages.map((item) => item.name).sort(), [
+      'offline-app',
+      'offline-common',
+      'offline-foreign',
+    ]);
+    assert.equal(result.manifest.collection?.optionalClosure, 'registry-expanded');
+    const report = await readJson<any>(path.join(bundle, 'inputs/platform-closure.json'));
+    assert.equal(report.edges[0].resolved, 'offline-foreign@1.0.0');
+    assert.deepEqual(report.platformMetadata.find((item) => item.name === 'offline-foreign').os, [
+      foreignOs,
+    ]);
+    assert.equal(result.manifest.resourceReview.status, 'pending');
+    await assert.rejects(access(marker), { code: 'ENOENT' });
+
+    // 采集侧 registry 与资源服务器关闭后，冻结制品仍可导出、导入和供消费端安装。
+    await source.close();
+    sourceClosed = true;
+    await closeAsset();
+    assetClosed = true;
+    const exported = path.join(root, 'static-export');
+    await exportResources(bundle, exported, 'http://intranet.example/static');
+    assert.deepEqual(await readFile(path.join(exported, 'resources/vendor/vendor.bin')), asset);
+    const resourceMap = await readJson<any>(path.join(exported, 'resource-map.json'));
+    assert.equal(
+      resourceMap.resources[0].environment.VENDOR_DOWNLOAD_URL,
+      'http://intranet.example/static/resources/vendor/vendor.bin',
+    );
+    const runDir = path.join(root, 'import-run');
+    const imported = await importBundle(bundle, { registry: target.base, runDir });
+    assert.equal(imported.phase, 'versions-ready');
+    assert.equal(target.writes.filter((item) => item.method === 'publish').length, 3);
+    await importBundle(bundle, { registry: target.base, runDir });
+    assert.equal(target.writes.filter((item) => item.method === 'publish').length, 3);
+    const consumer = path.join(root, 'consumer');
+    await mkdir(consumer);
+    await writeFile(
+      path.join(consumer, 'package.json'),
+      JSON.stringify({ name: 'offline-consumer', version: '1.0.0', private: true }),
+    );
+    await npmCommand(
+      ['install', 'offline-app@1.0.0', '--ignore-scripts', '--no-audit', '--no-fund'],
+      { cwd: consumer, registry: target.base, cache: path.join(root, 'empty-consumer-cache') },
+    );
+    assert.equal(
+      (await readJson<any>(path.join(consumer, 'node_modules/offline-common/package.json')))
+        .version,
+      '1.0.0',
+    );
+    await assert.rejects(access(path.join(consumer, 'node_modules/offline-foreign')), {
+      code: 'ENOENT',
+    });
+    await assert.rejects(access(marker), { code: 'ENOENT' });
+    assert.deepEqual(source.errors, []);
+    assert.deepEqual(target.errors, []);
   },
 );

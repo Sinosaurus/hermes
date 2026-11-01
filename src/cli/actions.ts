@@ -10,6 +10,7 @@ import {
 } from '../config.js';
 import path from 'node:path';
 import { stat } from 'node:fs/promises';
+import { exportResources } from '../core/resource-export.js';
 import { collect, recover } from '../core/collect.js';
 import { inventoryModules } from '../core/recovery.js';
 import { planImport, importBundle, promoteRun, rollbackRun } from '../core/publish.js';
@@ -88,6 +89,7 @@ export async function collectAction(options: CliOptions, onProgress: OnProgress)
     allowHosts: options.allowHost,
     resourcesFile: options.resources,
     installFlags: options.installFlag,
+    allPlatforms: options.allPlatforms,
     onProgress,
   });
   return bundleSummary(options.out ?? DEFAULT_BUNDLE_DIR, verified);
@@ -182,4 +184,13 @@ export async function runAction(action: CliAction, options: CliOptions, name: st
   } finally {
     progress.stop();
   }
+}
+
+export async function exportResourcesAction(options: CliOptions) {
+  if (!options.baseUrl) throw new Error('--base-url requires the intranet static service URL');
+  return exportResources(
+    options.bundle ?? DEFAULT_BUNDLE_DIR,
+    options.out ?? './static-export',
+    options.baseUrl,
+  );
 }

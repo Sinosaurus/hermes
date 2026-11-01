@@ -44,14 +44,28 @@ export interface ResourceReview {
   status: 'pending' | 'reviewed';
   evidence?: string[];
 }
+export interface ResourceDownload {
+  url: string;
+  sha256: string;
+  filename: string;
+  allowHosts?: string[];
+  maxBytes?: number;
+  timeoutMs?: number;
+}
 export interface Resource {
   id: string;
   targets: Target[];
   instructions: string;
   files: string[];
+  version?: string;
+  environment?: Record<string, string>;
+  download?: { url: string; sha256: string; filename: string; size: number };
 }
 export interface ResourceConfig {
-  resources: (Omit<Resource, 'files'> & { source: string })[];
+  resources: (Omit<Resource, 'files' | 'download'> & {
+    source?: string;
+    download?: ResourceDownload;
+  })[];
   review?: ResourceReview;
 }
 export interface BundlePackage extends PackageIdentity {
@@ -99,6 +113,7 @@ export interface Manifest {
   tagPlan: TagPlan[];
   resources: Resource[];
   resourceReview: ResourceReview;
+  collection?: { optionalClosure: 'lock-only' | 'registry-expanded'; report?: string };
   exceptions: { context: string; location: string; reason: string }[];
   files: Record<string, string>;
 }
@@ -157,6 +172,7 @@ export interface CollectOptions {
   allowHosts?: string[];
   resourcesFile?: string;
   installFlags?: string[];
+  allPlatforms?: boolean;
   onProgress?: OnProgress;
 }
 export interface RecoverOptions extends Omit<CollectOptions, 'project' | 'specs' | 'installFlags'> {
