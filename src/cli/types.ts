@@ -13,6 +13,7 @@ export interface CliOptions {
   allPlatforms?: boolean;
   baseUrl?: string;
   allowHost?: string[];
+  allowHttpRegistry?: string[];
   installFlag?: string[];
   nodeModules?: string;
   allowLinkRoot?: string[];

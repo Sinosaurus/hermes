@@ -20,7 +20,13 @@ const usageHints: Record<string, string> = {
   import: '发布地址读取当前 npm 配置，先配置可写私服。',
 };
 
-const repeatedOptions = new Set(['package', 'allowHost', 'allowLinkRoot', 'installFlag']);
+const repeatedOptions = new Set([
+  'package',
+  'allowHost',
+  'allowLinkRoot',
+  'installFlag',
+  'allowHttpRegistry',
+]);
 const booleanOptions = new Set(['json', 'repack', 'recovery', 'overwriteTags', 'allPlatforms']);
 
 /** 参考 Vite：单值选项取最后一次；本工具的批量选项保留全部值。 */
@@ -175,6 +181,11 @@ export function createProgram() {
     readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
   );
   const cli = cac('nova-hm')
+    .option(
+      '--allow-http-registry <url>',
+      '明确允许此 HTTP registry；匿名隔离模式，不发送凭据，可重复',
+      { type: [] },
+    )
     .option('--json', '始终输出完整 JSON，默认终端摘要、重定向 JSON', { default: false })
     .option('--progress <mode>', 'stderr 进度：auto/plain/none', { default: 'auto' });
 

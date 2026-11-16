@@ -1,5 +1,6 @@
 # Hermes：实现架构与运行指南
 
+> HTTP 私服现可通过精确端点显式授权、匿名隔离模式接入；默认仍为 HTTPS。本文历史 HTTPS-only 描述以 [HTTP 接入与验收](./http-registry.md) 为准。认证发布请使用 HTTPS。
 > 本地增强版增加跨平台 optional 依赖补齐、显式远程资源下载和离线导出，详见 [跨隔离网采集增强](./airgap-enhancements.md)。本文历史的“仅本地资源/不下载 URL”限制由该说明更新；任意脚本自动识别和自动部署仍不支持。
 
 日期：2026-10-12 · 首版 CLI · Ponytail full

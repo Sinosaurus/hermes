@@ -6,6 +6,7 @@ import type { SourceEntry, Tags, PackageJson, BundlePackage } from '../types.js'
 import type { Bundle } from './bundle.js';
 import {
   npmJson,
+  allowedHttpUrl,
   packageSpec,
   packArtifact,
   assertIntegrity,
@@ -21,7 +22,7 @@ function assertSourceUrl(value: string, registry: string, allowHosts: string[]) 
     url.username ||
     url.password ||
     url.hash ||
-    (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
+    (url.protocol !== 'https:' && !(url.protocol === 'http:' && (local || allowedHttpUrl(url))))
   )
     throw new Error(
       'Tarball source must use HTTPS without embedded credentials (localhost HTTP is allowed)',

@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { command, fileHash, readArtifact, readJson, writeJson } from '../src/lib/index.js';
 import { importBundle, planImport, promoteRun, rollbackRun } from '../src/core/publish.js';
+import { withHttpRegistries } from '../src/lib/security.js';
 import { adapters } from '../src/core/publishing/context.js';
 import { tagsFor } from '../src/core/publishing/registry.js';
 
@@ -73,7 +74,7 @@ async function fixture(
   return { root, bundle, pkg, pkgs, manifest, manifestDigest, runDir: path.join(root, 'run') };
 }
 
-function registryAdapter() {
+function registryAdapter(endpoint = REGISTRY) {
   const packages = new Map();
   const calls = { publish: [], pack: [], tag: [] };
   const hooks = {};
@@ -83,7 +84,7 @@ function registryAdapter() {
   };
   const seed = (pkg, tags = {}) => {
     const item = get(pkg.name);
-    const tarball = new URL(`${encodeURIComponent(pkg.name)}/-/${pkg.version}.tgz`, REGISTRY).href;
+    const tarball = new URL(`${encodeURIComponent(pkg.name)}/-/${pkg.version}.tgz`, endpoint).href;
     item.versions.set(pkg.version, {
       packageJson: { name: pkg.name, version: pkg.version },
       sha256: pkg.sha256 ?? 'old-version',
@@ -99,7 +100,7 @@ function registryAdapter() {
   });
   const adapter = {
     async npmJson(args, options) {
-      assert.equal(options.registry, REGISTRY);
+      assert.equal(options.registry, endpoint);
       hooks.query?.(args);
       assert.equal(args[0], 'view');
       const { name, version } = split(args[1]);
@@ -109,7 +110,7 @@ function registryAdapter() {
       return { tarball: item.versions.get(version).tarball };
     },
     async packArtifact(url, destination, options) {
-      assert.equal(options.registry, REGISTRY);
+      assert.equal(options.registry, endpoint);
       calls.pack.push(url);
       hooks.pack?.(url);
       for (const item of packages.values()) {
@@ -119,7 +120,7 @@ function registryAdapter() {
       throw npmError('E404');
     },
     async npmCommand(args, options) {
-      assert.equal(options.registry, REGISTRY);
+      assert.equal(options.registry, endpoint);
       if (args[0] === 'publish') {
         assert.ok(args.includes('--ignore-scripts'));
         assert.ok(args.includes('--provenance=false'));
@@ -770,4 +771,33 @@ test('remote artifact byte accounting falls back to file size when an adapter om
   artifact.file = path.join(f.bundle, f.pkg.file);
   const planned = await planImport(f.bundle, options(f, remote));
   assert.equal(planned.stats.downloadBytes, f.pkg.size);
+});
+
+test('HTTP plan/import/promote/rollback require renewed endpoint permission', async (t) => {
+  const f = await fixture(t);
+  const endpoint = 'http://registry.internal:4873/npm/';
+  const remote = registryAdapter(endpoint);
+  const options = {
+    registry: endpoint,
+    readRegistry: endpoint,
+    runDir: f.runDir,
+    adapter: remote.adapter,
+  };
+  await assert.rejects(planImport(f.bundle, options), /HTTPS/);
+  await withHttpRegistries([endpoint], async () => {
+    await planImport(f.bundle, options);
+    await importBundle(f.bundle, options);
+  });
+  const acceptance = await acceptanceFile(f, { writeRegistry: endpoint, readRegistry: endpoint });
+  await assert.rejects(
+    promoteRun(f.runDir, { adapter: remote.adapter, acceptanceFile: acceptance }),
+    /HTTPS/,
+  );
+  await assert.rejects(rollbackRun(f.runDir, { adapter: remote.adapter }), /HTTPS/);
+  await withHttpRegistries([endpoint], async () => {
+    await promoteRun(f.runDir, { adapter: remote.adapter, acceptanceFile: acceptance });
+    assert.equal(remote.get(f.pkg.name).tags.latest, '1.0.0');
+    await rollbackRun(f.runDir, { adapter: remote.adapter });
+    assert.equal(remote.get(f.pkg.name).tags.latest, undefined);
+  });
 });

@@ -15,6 +15,7 @@ import { collect, recover } from '../core/collect.js';
 import { inventoryModules } from '../core/recovery.js';
 import { planImport, importBundle, promoteRun, rollbackRun } from '../core/publish.js';
 import { readJson, verifyBundle, writeJson, npmCommand, normalizeRegistry } from '../lib/index.js';
+import { withHttpRegistries } from '../lib/security.js';
 import { createProgress } from './progress.js';
 import { writeResult } from './output.js';
 
@@ -173,7 +174,13 @@ export const rollbackAction = (options: CliOptions, onProgress: OnProgress) =>
 export async function runAction(action: CliAction, options: CliOptions, name: string) {
   const progress = createProgress({ mode: options.progress });
   try {
-    const output = await action(options, (event) => progress.update(event));
+    if (options.allowHttpRegistry?.length)
+      process.stderr.write(
+        '警告：HTTP 不加密，存在内容篡改风险。此操作只使用匿名 npm 配置，不发送凭据；认证请使用 HTTPS。\n',
+      );
+    const output = await withHttpRegistries(options.allowHttpRegistry ?? [], () =>
+      action(options, (event) => progress.update(event)),
+    );
     if (
       ('issues' in output && output.issues.length) ||
       ('cleanupPending' in output && output.cleanupPending?.length) ||
