@@ -128,3 +128,23 @@ test('human summary states coverage uncertainty and actionable next steps', () =
   assert.match(stream.text(), /electron/);
   assert.match(stream.text(), /下一步：nova-hm plan/);
 });
+
+test('human output uses a quiet grouping and respects NO_COLOR', (t) => {
+  const previous = process.env.NO_COLOR;
+  t.onTestFinished(() => {
+    if (previous === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previous;
+  });
+  process.env.NO_COLOR = '1';
+  const stream = capture(true);
+  writeResult('import', ready, {}, stream);
+  assert.match(stream.text(), /\n  版本已上传就绪.*\n  目标仓库/);
+  assert.match(stream.text(), /\n\n  下一步：.*nova-hm promote/);
+  assert.ok(!stream.text().includes('\u001b'));
+
+  delete process.env.NO_COLOR;
+  const json = capture(true);
+  writeResult('import', ready, { json: true }, json);
+  assert.deepEqual(JSON.parse(json.text()), ready);
+  assert.ok(!json.text().includes('\u001b'));
+});

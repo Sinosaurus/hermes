@@ -17,6 +17,7 @@ import { planImport, importBundle, promoteRun, rollbackRun } from '../core/publi
 import { readJson, verifyBundle, writeJson, npmCommand, normalizeRegistry } from '../lib/index.js';
 import { withHttpRegistries } from '../lib/security.js';
 import { createProgress } from './progress.js';
+import { banner } from './presentation.js';
 import { writeResult } from './output.js';
 import { bundleCoverage } from './coverage.js';
 
@@ -174,6 +175,7 @@ export const rollbackAction = (options: CliOptions, onProgress: OnProgress) =>
 
 /** 统一输出边界：进度走 stderr，结果走 stdout，异常也必须恢复终端状态。 */
 export async function runAction(action: CliAction, options: CliOptions, name: string) {
+  if (!options.json) banner(name);
   const progress = createProgress({ mode: options.progress });
   try {
     if (options.allowHttpRegistry?.length)
@@ -189,7 +191,11 @@ export async function runAction(action: CliAction, options: CliOptions, name: st
       ('rollbackPending' in output && output.rollbackPending?.length)
     )
       process.exitCode = 2;
+    progress.stop();
     writeResult(name, output, options);
+  } catch (error) {
+    progress.fail();
+    throw error;
   } finally {
     progress.stop();
   }

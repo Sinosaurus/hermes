@@ -4,6 +4,7 @@ import type { TransferStats } from '../core/types.js';
 import { stripVTControlCharacters } from 'node:util';
 import { PACK_NPM_VERSION, DEFAULT_RUN_DIR } from '../config.js';
 import { formatBytes } from './progress.js';
+import { paint } from './presentation.js';
 import { redact } from '../lib/security.js';
 
 const states: Record<string, string> = {
@@ -21,63 +22,74 @@ function transferSummary(stats?: TransferStats) {
 }
 
 export function resultSummary(action: string, result: CommandResult, options: CliOptions = {}) {
-  let lines;
+  let lines: string[];
+  let next: string | undefined;
   if ('exportDirectory' in result) {
     lines = [
       `资源导出完成：${result.resources} 项资源，${result.files} 个文件`,
       `暂存目录：${result.exportDirectory}`,
-      '未上传到静态服务；请按 resource-map.json 配置并实际断网验收。',
-      '静态主机仅在安装器需要 URL 下载时必需；也可按厂商规范预置本地缓存。',
-      '下一步：部署暂存目录或分发缓存，配置安装器镜像地址，再在目标 OS 上验收。',
+      '',
+      '尚未部署。可按 resource-map.json 配置静态地址，或按厂商要求预置缓存。',
     ];
+    next = '部署资源或分发缓存，再在目标环境断网验收。';
   } else if ('bundle' in result) {
     lines = [
-      `${action === 'verify' ? '校验通过' : '收集完成'}：${result.packages} 个包，${result.resources} 项资源`,
+      `${action === 'verify' ? '校验通过' : '收集完成'}：${result.packages} 个包，${result.resources} 项静态资源`,
       `交付目录：${result.bundle}`,
-      `资源审查：${result.resourceReview?.status === 'reviewed' ? '已完成（人工声明，不等于自动检测完整）' : '待审查 / 未配置，不能推断没有额外资源'}`,
-      '下一步：nova-hm plan --bundle <交付目录> --registry <可写私服地址>',
-      '跨平台采集：collect --all-platforms 补齐 npm 声明的 optional 包；不执行安装脚本。',
-      '静态资源：Electron/Playwright 等安装器下载不自动包含；需 resources.json 或厂商缓存方案。',
     ];
     if (result.coverage) {
       const { npm, static: resources } = result.coverage;
-      lines.push(
-        `npm 平台采集：${npm.mode === 'registry-expanded' ? '已启用 --all-platforms' : '未扩展平台闭包；如需多平台请使用 --all-platforms'}`,
-      );
+      lines.push('', '平台包');
       if (npm.status === 'metadata-only-not-runtime-tested') {
-        lines.push('常用目标（仅元数据匹配包数，不代表安装通过；0 不等于缺包）：');
+        for (const cpu of ['x64', 'arm64']) {
+          const group = npm.profiles.filter((profile) => profile.cpu === cpu);
+          if (group.length)
+            lines.push(
+              group
+                .map(
+                  (profile) =>
+                    `${profile.os}/${profile.cpu}${profile.libc ? `/${profile.libc}` : ''}：${profile.matchingPlatformPackages ?? '未评估'}`,
+                )
+                .join('  ·  '),
+            );
+        }
+        lines.push('数量来自 npm 元数据，0 不等于缺包，不代表安装通过。');
+      } else {
         lines.push(
-          ...npm.profiles.map(
-            (profile) =>
-              `  ${profile.os}/${profile.cpu}${profile.libc ? `/${profile.libc}` : ''}：${profile.matchingPlatformPackages ?? '未评估'}`,
-          ),
+          npm.mode === 'registry-expanded'
+            ? '平台元数据未评估。'
+            : '未扩展平台包；跨平台采集用 collect --all-platforms。',
         );
       }
       lines.push(
-        `静态资源已收录：${resources.entries.length} 项；缺失：未评估；自动检测：未执行。`,
+        '',
+        '静态资源',
+        `已收录 ${resources.entries.length} 项 · 缺失：未评估 · 未自动检测`,
+        `资源审查：${resources.review === 'reviewed' ? '已人工确认，不等于覆盖完整' : '待审查'}`,
       );
-      if (resources.entries.length)
-        lines.push(`已收录标识：${resources.entries.map((entry) => entry.id).join('、')}`);
       if (resources.knownRuntimePackages.length)
         lines.push(
-          `需核对安装器资源：${resources.knownRuntimePackages.join('、')}（版本、目标平台、缓存/镜像配置需单独验收）。`,
+          `需另核对 ${resources.knownRuntimePackages.join('、')} 的安装器下载；使用资源清单或厂商缓存。`,
         );
-      lines.push('已声明文件缺失或校验不符会阻断；未声明的下载不能自动判定完整。');
+    } else {
+      lines.push('', '静态资源', '未评估覆盖范围；安装器下载需另行核对。');
     }
+    next = 'nova-hm plan --bundle <交付目录> --registry <可写私服地址>';
   } else if ('instances' in result) {
     lines = [
       `盘点完成：${result.instances.length} 个包实例；布局 ${result.layout}；${result.issues.length} 个问题`,
       `安装树：${result.sourceRoot}`,
     ];
+    if (result.issues.length) lines.push('');
     lines.push(...result.issues.slice(0, 5).map((issue) => `${issue.path}：${issue.message}`));
     if (result.issues.length > 5) lines.push('更多问题请加 --json 查看完整记录。');
   } else if ('tagChanges' in result) {
     const pending = result.packages.filter((pkg) => pkg.action === 'publish').length;
     lines = [
-      `预检完成：待上传 ${pending} 个；可复用 ${result.packages.length - pending} 个；tag 覆盖冲突 ${result.tagChanges.filter((tag) => tag.conflict).length} 个`,
+      `只读预检完成：待上传 ${pending} 个；可复用 ${result.packages.length - pending} 个；tag 冲突 ${result.tagChanges.filter((tag) => tag.conflict).length} 个`,
       `目标仓库：${result.registry}`,
-      '只读预检，不代表已发布。下一步：nova-hm import --bundle <交付目录> --registry <可写私服地址>',
     ];
+    next = 'nova-hm import --bundle <交付目录> --registry <可写私服地址>';
   } else {
     lines = [
       states[result.phase] || result.phase,
@@ -85,9 +97,7 @@ export function resultSummary(action: string, result: CommandResult, options: Cl
       `运行记录：${options.run ?? DEFAULT_RUN_DIR}`,
     ];
     if (result.phase === 'versions-ready')
-      lines.push(
-        '下一步：新目录 + 空缓存安装精确版本并运行验证；记录 acceptance 后再执行 nova-hm promote。',
-      );
+      next = '空缓存安装精确版本、验证运行；记录验收结果后执行 nova-hm promote。';
     if (result.cleanupPending?.length)
       lines.push(`待清理临时 tag：${result.cleanupPending.length} 项，请使用同一 run 重试。`);
     if (result.rollbackPending?.length)
@@ -95,7 +105,10 @@ export function resultSummary(action: string, result: CommandResult, options: Cl
         `待恢复 tag：${result.rollbackPending.length} 项，请检查外部变更后重试 rollback。`,
       );
   }
-  return [...lines, ...transferSummary('stats' in result ? result.stats : undefined)].join('\n');
+  const transfer = transferSummary('stats' in result ? result.stats : undefined);
+  if (transfer.length) lines.push('', ...transfer);
+  if (next) lines.push('', `下一步：${next}`);
+  return lines.map((line, index) => (!index || !line ? line : `  ${line}`)).join('\n');
 }
 
 /** 管道保留原 JSON 契约；人工终端只显示摘要，--json 可显式取得完整记录。 */
@@ -105,11 +118,14 @@ export function writeResult(
   options: CliOptions = {},
   stream: OutputStream = process.stdout,
 ) {
-  const text =
-    options.json || !stream.isTTY
-      ? JSON.stringify(result, null, 2)
-      : stripVTControlCharacters(resultSummary(action, result, options));
-  stream.write(`${text}\n`);
+  if (options.json || !stream.isTTY) {
+    stream.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  const [heading, ...body] = stripVTControlCharacters(resultSummary(action, result, options)).split(
+    '\n',
+  );
+  stream.write(`\n  ${[paint(heading, 32, stream), ...body].join('\n')}\n`);
 }
 
 function errorHint(error: Error & { code?: string; npmCode?: string }) {

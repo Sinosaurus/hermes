@@ -49,7 +49,7 @@ export function progressLine(event: ProgressEvent) {
   return `${phase} ${count} ${stats} ${name}`.trimEnd();
 }
 
-/** stderr 留给进度；stdout 留给结果。终端刷新、宽度与 ETA 由 cli-progress 管理。 */
+/** 一阶段一条动态行，批量任务不输出逐包日志；管道仅节流输出阶段快照。 */
 export function createProgress({ mode = 'auto', stream = process.stderr } = {}) {
   if (!['auto', 'plain', 'none'].includes(mode))
     throw new Error('--progress must be auto, plain or none');
@@ -58,16 +58,22 @@ export function createProgress({ mode = 'auto', stream = process.stderr } = {}) 
     ? new cliProgress.SingleBar(
         {
           stream,
-          barsize: 20,
-          linewrap: true,
+          barsize: 12,
+          linewrap: false,
           formatTime: formatEta,
-          format: '{phase} [{bar}] {count} | {stats} | ETA {eta_formatted} | {name}',
+          format:
+            '  {phase}  {count}  成功 {done} · 复用 {reused} · {rate}/s · ETA {eta_formatted}',
         },
         cliProgress.Presets.shades_classic,
       )
     : undefined;
   let phase: string | undefined,
-    active = false;
+    active = false,
+    last: ProgressEvent | undefined;
+  let started = Date.now(),
+    lastPrint = 0,
+    startBytes = 0,
+    finished = false;
   function stop() {
     bar?.stop();
     active = false;
@@ -75,21 +81,50 @@ export function createProgress({ mode = 'auto', stream = process.stderr } = {}) 
   return {
     update(event: ProgressEvent) {
       if (mode === 'none') return;
-      if (!tty) {
-        stream.write(`${progressLine(event)}\n`);
-        return;
-      }
-      if (phase !== event.phase || !active) {
+      const changed = phase !== event.phase;
+      const completed = (event.total ?? 0) > 0 && (event.completed ?? 0) >= event.total!;
+      if (changed) {
         stop();
         phase = event.phase;
+        started = Date.now();
+        finished = false;
+        startBytes = (event.downloadBytes ?? 0) + (event.uploadBytes ?? 0);
+      }
+      last = event;
+      if (finished && completed) return;
+      const done = Math.max(0, (event.completed ?? 0) - (event.reused ?? 0));
+      const bytes = Math.max(0, (event.downloadBytes ?? 0) + (event.uploadBytes ?? 0) - startBytes);
+      const data = {
+        ...payload(event),
+        done,
+        reused: event.reused ?? 0,
+        rate: formatBytes(Math.round(bytes / Math.max(1, (Date.now() - started) / 1000))),
+      };
+      if (!tty) {
+        if (changed || completed || Date.now() - lastPrint >= 5000) {
+          stream.write(
+            `  ${data.phase} ${data.count} · 成功 ${done} · 复用 ${data.reused} · ${data.rate}/s\n`,
+          );
+          lastPrint = Date.now();
+        }
+      } else if (!active) {
+        bar!.start(Math.max(1, event.total ?? 0), event.completed ?? 0, data);
         active = true;
-        // 总数未定时只展示等待状态，不能把 0/0 渲染成已完成。
-        bar!.start(Math.max(1, event.total ?? 0), event.completed ?? 0, payload(event));
       } else {
         bar!.setTotal(Math.max(1, event.total ?? 0));
-        bar!.update(event.completed ?? 0, payload(event));
+        bar!.update(event.completed ?? 0, data);
       }
-      if ((event.total ?? 0) > 0 && (event.completed ?? 0) >= (event.total ?? 0)) stop();
+      if (completed) {
+        stop();
+        finished = true;
+      }
+    },
+    fail() {
+      stop();
+      if (mode !== 'none' && last)
+        stream.write(
+          `  ${phases[last.phase] ?? last.phase} 中断 · 失败 1（当前操作）· 已处理 ${last.completed ?? 0}/${last.total ?? '?'}；未处理项未验证\n`,
+        );
     },
     stop,
   };
