@@ -27,13 +27,43 @@ export function resultSummary(action: string, result: CommandResult, options: Cl
       `资源导出完成：${result.resources} 项资源，${result.files} 个文件`,
       `暂存目录：${result.exportDirectory}`,
       '未上传到静态服务；请按 resource-map.json 配置并实际断网验收。',
+      '静态主机仅在安装器需要 URL 下载时必需；也可按厂商规范预置本地缓存。',
+      '下一步：部署暂存目录或分发缓存，配置安装器镜像地址，再在目标 OS 上验收。',
     ];
   } else if ('bundle' in result) {
     lines = [
       `${action === 'verify' ? '校验通过' : '收集完成'}：${result.packages} 个包，${result.resources} 项资源`,
       `交付目录：${result.bundle}`,
-      `资源审查：${result.resourceReview?.status === 'reviewed' ? '已完成' : '待审查'}`,
+      `资源审查：${result.resourceReview?.status === 'reviewed' ? '已完成（人工声明，不等于自动检测完整）' : '待审查 / 未配置，不能推断没有额外资源'}`,
+      '下一步：nova-hm plan --bundle <交付目录> --registry <可写私服地址>',
+      '跨平台采集：collect --all-platforms 补齐 npm 声明的 optional 包；不执行安装脚本。',
+      '静态资源：Electron/Playwright 等安装器下载不自动包含；需 resources.json 或厂商缓存方案。',
     ];
+    if (result.coverage) {
+      const { npm, static: resources } = result.coverage;
+      lines.push(
+        `npm 平台采集：${npm.mode === 'registry-expanded' ? '已启用 --all-platforms' : '未扩展平台闭包；如需多平台请使用 --all-platforms'}`,
+      );
+      if (npm.status === 'metadata-only-not-runtime-tested') {
+        lines.push('常用目标（仅元数据匹配包数，不代表安装通过；0 不等于缺包）：');
+        lines.push(
+          ...npm.profiles.map(
+            (profile) =>
+              `  ${profile.os}/${profile.cpu}${profile.libc ? `/${profile.libc}` : ''}：${profile.matchingPlatformPackages ?? '未评估'}`,
+          ),
+        );
+      }
+      lines.push(
+        `静态资源已收录：${resources.entries.length} 项；缺失：未评估；自动检测：未执行。`,
+      );
+      if (resources.entries.length)
+        lines.push(`已收录标识：${resources.entries.map((entry) => entry.id).join('、')}`);
+      if (resources.knownRuntimePackages.length)
+        lines.push(
+          `需核对安装器资源：${resources.knownRuntimePackages.join('、')}（版本、目标平台、缓存/镜像配置需单独验收）。`,
+        );
+      lines.push('已声明文件缺失或校验不符会阻断；未声明的下载不能自动判定完整。');
+    }
   } else if ('instances' in result) {
     lines = [
       `盘点完成：${result.instances.length} 个包实例；布局 ${result.layout}；${result.issues.length} 个问题`,
@@ -46,6 +76,7 @@ export function resultSummary(action: string, result: CommandResult, options: Cl
     lines = [
       `预检完成：待上传 ${pending} 个；可复用 ${result.packages.length - pending} 个；tag 覆盖冲突 ${result.tagChanges.filter((tag) => tag.conflict).length} 个`,
       `目标仓库：${result.registry}`,
+      '只读预检，不代表已发布。下一步：nova-hm import --bundle <交付目录> --registry <可写私服地址>',
     ];
   } else {
     lines = [
@@ -53,6 +84,10 @@ export function resultSummary(action: string, result: CommandResult, options: Cl
       `目标仓库：${result.registry}`,
       `运行记录：${options.run ?? DEFAULT_RUN_DIR}`,
     ];
+    if (result.phase === 'versions-ready')
+      lines.push(
+        '下一步：新目录 + 空缓存安装精确版本并运行验证；记录 acceptance 后再执行 nova-hm promote。',
+      );
     if (result.cleanupPending?.length)
       lines.push(`待清理临时 tag：${result.cleanupPending.length} 项，请使用同一 run 重试。`);
     if (result.rollbackPending?.length)
@@ -104,8 +139,8 @@ function errorHint(error: Error & { code?: string; npmCode?: string }) {
     return '在业务目录准备 packages.json 或 npm 锁文件；只有 node_modules 时执行 recover。';
   if (error.message.includes('default public registry'))
     return '配置私服 npm registry，或通过 --registry 指定可写私服地址。';
-  if (/\b(E401|E403)\b/.test(error.npmCode ?? error.message))
-    return '检查私服登录凭证、发布权限及 scope 对应的仓库配置。';
+  if (/\b(ENEEDAUTH|E401|E403)\b/.test(error.npmCode ?? error.message))
+    return '检查私服登录与发布权限；公网 HTTP 模式不发送凭据，请改用可信 HTTPS 或安全回环隧道。';
   if (error.message.includes('verified npm'))
     return `打包机需使用已验证的 npm ${PACK_NPM_VERSION}，请检查当前 npm --version。`;
   if (error.message.includes('Recovery blocked'))

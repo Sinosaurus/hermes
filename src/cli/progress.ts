@@ -28,6 +28,13 @@ export function formatBytes(bytes = 0) {
   return `${value.toFixed(1)} ${units[index]}`;
 }
 
+/** 不将 Infinity/NaN 等内部 ETA 状态暴露给终端用户。 */
+export function formatEta(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '估算中';
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  return `${Math.ceil(seconds / 60)}min`;
+}
+
 function payload(event: ProgressEvent) {
   return {
     phase: phases[event.phase] || event.phase,
@@ -53,6 +60,7 @@ export function createProgress({ mode = 'auto', stream = process.stderr } = {}) 
           stream,
           barsize: 20,
           linewrap: true,
+          formatTime: formatEta,
           format: '{phase} [{bar}] {count} | {stats} | ETA {eta_formatted} | {name}',
         },
         cliProgress.Presets.shades_classic,

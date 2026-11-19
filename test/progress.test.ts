@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm, mkdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createProgress, progressLine, formatBytes } from '../src/cli/progress.js';
+import { createProgress, progressLine, formatBytes, formatEta } from '../src/cli/progress.js';
 import { packageInputs, collectDefaults, targetRegistry } from '../src/cli/actions.js';
 import { command } from '../src/lib/index.js';
 
@@ -157,4 +157,11 @@ test('resource defaults apply to explicit inputs without replacing an explicit r
   const explicit = { ...input, resources: path.join(root, 'explicit-resources.json') };
   assert.deepEqual(await collectDefaults(explicit, root), explicit);
   assert.equal((await collectDefaults({ project: root }, root)).resources, resources);
+});
+
+test('ETA never renders nonfinite placeholders', () => {
+  for (const value of [Infinity, -Infinity, NaN, -1]) assert.equal(formatEta(value), '估算中');
+  assert.equal(formatEta(0), '0s');
+  assert.equal(formatEta(1.2), '2s');
+  assert.equal(formatEta(61), '2min');
 });

@@ -18,8 +18,9 @@ import { readJson, verifyBundle, writeJson, npmCommand, normalizeRegistry } from
 import { withHttpRegistries } from '../lib/security.js';
 import { createProgress } from './progress.js';
 import { writeResult } from './output.js';
+import { bundleCoverage } from './coverage.js';
 
-function bundleSummary(directory: string, verified: VerifiedBundle) {
+async function bundleSummary(directory: string, verified: VerifiedBundle) {
   const { manifest, manifestDigest, stats } = verified;
   return {
     bundle: path.resolve(directory),
@@ -29,6 +30,7 @@ function bundleSummary(directory: string, verified: VerifiedBundle) {
     resources: manifest.resources.length,
     resourceReview: manifest.resourceReview,
     targets: manifest.targets,
+    coverage: await bundleCoverage(directory, manifest),
     stats,
   };
 }
