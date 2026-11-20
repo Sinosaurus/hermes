@@ -49,6 +49,8 @@ export async function loadRun(dir: string) {
     (await common.fileHash(path.join(dir, 'identity.json'))) !== state.identityDigest
   )
     throw failure('Run identity or original tag snapshot changed');
+  common.normalizeRegistry(identity.registry);
+  common.normalizeRegistry(identity.readRegistry);
   validate(identity.manifest, identity.recovery);
   return { identity, state };
 }

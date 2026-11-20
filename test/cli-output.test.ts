@@ -94,3 +94,57 @@ test('failure output redacts secrets and adds an actionable hint in terminal and
   );
   assert.match(unsafe.text(), /--out.*node_modules.*之外/);
 });
+
+test('human summary states coverage uncertainty and actionable next steps', () => {
+  const stream = capture(true);
+  writeResult(
+    'collect',
+    {
+      bundle: '/bundle',
+      packages: 3,
+      resources: 0,
+      resourceReview: { status: 'pending' },
+      coverage: {
+        npm: {
+          mode: 'registry-expanded',
+          status: 'metadata-only-not-runtime-tested',
+          profiles: [{ os: 'win32', cpu: 'arm64', matchingPlatformPackages: 0 }],
+        },
+        static: {
+          entries: [],
+          knownRuntimePackages: ['electron'],
+          review: 'pending',
+          missing: 'not-assessed',
+          automaticDetection: 'not-performed',
+        },
+      },
+    },
+    {},
+    stream,
+  );
+  assert.match(stream.text(), /不代表安装通过/);
+  assert.match(stream.text(), /win32\/arm64：0/);
+  assert.match(stream.text(), /缺失：未评估/);
+  assert.match(stream.text(), /electron/);
+  assert.match(stream.text(), /下一步：nova-hm plan/);
+});
+
+test('human output uses a quiet grouping and respects NO_COLOR', (t) => {
+  const previous = process.env.NO_COLOR;
+  t.onTestFinished(() => {
+    if (previous === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previous;
+  });
+  process.env.NO_COLOR = '1';
+  const stream = capture(true);
+  writeResult('import', ready, {}, stream);
+  assert.match(stream.text(), /\n  版本已上传就绪.*\n  目标仓库/);
+  assert.match(stream.text(), /\n\n  下一步：.*nova-hm promote/);
+  assert.ok(!stream.text().includes('\u001b'));
+
+  delete process.env.NO_COLOR;
+  const json = capture(true);
+  writeResult('import', ready, { json: true }, json);
+  assert.deepEqual(JSON.parse(json.text()), ready);
+  assert.ok(!json.text().includes('\u001b'));
+});

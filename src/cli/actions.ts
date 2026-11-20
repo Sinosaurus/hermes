@@ -15,10 +15,13 @@ import { collect, recover } from '../core/collect.js';
 import { inventoryModules } from '../core/recovery.js';
 import { planImport, importBundle, promoteRun, rollbackRun } from '../core/publish.js';
 import { readJson, verifyBundle, writeJson, npmCommand, normalizeRegistry } from '../lib/index.js';
+import { withHttpRegistries } from '../lib/security.js';
 import { createProgress } from './progress.js';
+import { banner } from './presentation.js';
 import { writeResult } from './output.js';
+import { bundleCoverage } from './coverage.js';
 
-function bundleSummary(directory: string, verified: VerifiedBundle) {
+async function bundleSummary(directory: string, verified: VerifiedBundle) {
   const { manifest, manifestDigest, stats } = verified;
   return {
     bundle: path.resolve(directory),
@@ -28,6 +31,7 @@ function bundleSummary(directory: string, verified: VerifiedBundle) {
     resources: manifest.resources.length,
     resourceReview: manifest.resourceReview,
     targets: manifest.targets,
+    coverage: await bundleCoverage(directory, manifest),
     stats,
   };
 }
@@ -171,16 +175,27 @@ export const rollbackAction = (options: CliOptions, onProgress: OnProgress) =>
 
 /** 统一输出边界：进度走 stderr，结果走 stdout，异常也必须恢复终端状态。 */
 export async function runAction(action: CliAction, options: CliOptions, name: string) {
+  if (!options.json) banner(name);
   const progress = createProgress({ mode: options.progress });
   try {
-    const output = await action(options, (event) => progress.update(event));
+    if (options.allowHttpRegistry?.length)
+      process.stderr.write(
+        '警告：HTTP 不加密，存在内容篡改风险。此操作只使用匿名 npm 配置，不发送凭据；认证请使用 HTTPS。\n',
+      );
+    const output = await withHttpRegistries(options.allowHttpRegistry ?? [], () =>
+      action(options, (event) => progress.update(event)),
+    );
     if (
       ('issues' in output && output.issues.length) ||
       ('cleanupPending' in output && output.cleanupPending?.length) ||
       ('rollbackPending' in output && output.rollbackPending?.length)
     )
       process.exitCode = 2;
+    progress.stop();
     writeResult(name, output, options);
+  } catch (error) {
+    progress.fail();
+    throw error;
   } finally {
     progress.stop();
   }

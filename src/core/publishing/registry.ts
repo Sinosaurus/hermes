@@ -75,6 +75,9 @@ export async function remoteArtifact(api: Api, pkg: BundlePackage, registry: str
     throw failure(`Invalid remote tarball URL for ${common.packageSpec(pkg)}`);
   }
   if (
+    (common.anonymousHttpMode() &&
+      tarball.protocol === 'http:' &&
+      !common.allowedHttpUrl(tarball)) ||
     tarball.origin !== new URL(registry).origin ||
     tarball.username ||
     tarball.password ||

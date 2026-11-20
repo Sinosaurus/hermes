@@ -106,3 +106,7 @@ nova-hm recover --help
 ## 跨平台与外部资源采集增强
 
 新增 `collect --all-platforms`、`resources.json` 的显式 URL + SHA-256 下载、`export-resources` 离线静态目录导出。参见 [跨隔离网采集增强](docs/airgap-enhancements.md)，包括完整流程、支持边界和验收要求。
+
+## HTTP 私服
+
+现有 HTTP 私服可通过 `--allow-http-registry <完整地址>` 显式启用匿名隔离模式。默认仍要求 HTTPS，不通过 HTTP 发送密码或 token。参见 [HTTP 接入与真实验收](docs/http-registry.md)。

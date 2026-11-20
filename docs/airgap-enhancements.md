@@ -1,6 +1,7 @@
 # 跨隔离网采集增强
 
-这一版保留原有 `collect → verify → plan → import → 验收 → promote`，新增跨平台可选依赖补齐、显式远程资源下载和离线静态资源导出。**不自动执行安装脚本，不自动上传静态服务，不修改项目锁文件。**
+> HTTP 私服现可通过精确端点显式授权、匿名隔离模式接入；默认仍为 HTTPS。本文历史 HTTPS-only 描述以 [HTTP 接入与验收](./http-registry.md) 为准。认证发布请使用 HTTPS。
+> 这一版保留原有 `collect → verify → plan → import → 验收 → promote`，新增跨平台可选依赖补齐、显式远程资源下载和离线静态资源导出。**不自动执行安装脚本，不自动上传静态服务，不修改项目锁文件。**
 
 ## 1. 联网采集 npm 包
 
@@ -14,6 +15,8 @@ nova-hm verify --bundle ./bundle-20261101
 `--all-platforms` 明确遍历每个已选版本的 registry 元数据，补齐 `optionalDependencies`，不按采集机器的 OS/CPU 过滤。保留原锁中已选精确版本；缺失项在临时目录用禁脚本的 npm 锁解析，保存额外输入和精确版本。新增平台包的必需依赖缺失、可选包无法解析、身份/范围不符都会失败，不能静默给出“全平台完成”。
 
 `inputs/platform-closure.json` 记录父包、请求范围、锁中/补充解析来源、补充上下文，以及上游声明的 OS/CPU/libc。原项目锁保持原样。**此报告是采集证据，不是所有目标平台的运行验收证书。** 保持 `manifest.targets` 原有采集目标语义，不把上游平台声明冒充实测。
+
+**常用环境一次采：** 使用 `--all-platforms`，无需在每台机器重复收集。摘要按 Windows、macOS 的 x64/ARM64，以及 Linux 的 x64/ARM64 × glibc/musl，列出已收录制品中匹配元数据声明的数量。数量为零只是没有相应声明，不代表缺包或覆盖完整；纯 JS 包本就可能不声明平台。普通锁文件模式不做此项评估。`--json` 保留原有字段，并新增 `coverage.npm`；`manifest.targets` 不变。Windows 是采集目标，不代表 Hermes 可在 Windows 原生命令行运行（目前用 WSL）。
 
 默认不加该选项时仍只收锁中条目，兼容原行为。非精确范围在采集时解析并冻结，换时间重采可能选中不同版本，请保留 bundle 和 report。不同上下文的同名不同版本均保留；相同包版本仍走既有 tarball 完整性去重/冲突校验。
 
@@ -52,6 +55,13 @@ GitHub Releases、厂商二进制、浏览器和运行时文件不是普通 npm 
 - 不自动下载并执行上游脚本，不自动解压二进制，不支持私密 URL/token。需要认证的资源先通过授权方式下载为本地 `source`。
 - `version`、`targets`、`environment`、来源与 SHA 一起冻结。审查仍默认 pending，只有人工有证据才能填 `review.status: reviewed`。
 
+**如何读资源状态：**
+
+- **已收录：** 来自显式清单且通过批次校验的资源，摘要和 `coverage.static.entries` 给出记录；这不代表外部资源齐全。
+- **明确缺失或校验失败：** 已声明文件缺失、下载失败或 SHA-256 不匹配时，采集失败；不会生成一份把该项当作已收录的成功结果。
+- **未配置／未检测：** 没有资源条目时不能判断不需要静态文件。Hermes 不执行安装脚本，也不会穷举未声明的访问；`coverage.static.missing` 显示未评估。看到 Electron / Playwright 包名只是复核提醒，不会自动取得安装器、浏览器 revision 或系统依赖。
+- **何时需要静态服务：** npm tarball（包括按 OS/CPU/libc 分发的平台包）放 npm 私服即可。Electron 二进制、Playwright 浏览器等非 npm 文件，若使用内网镜像 URL，就部署至已有静态服务；若按厂商文档预置目标本机缓存，则不必新增静态主机。`export-resources` 只校验、整理和生成映射，不负责上传或自动配置厂商工具。
+
 ## 3. 搬运后离线入库
 
 将完整 bundle、Hermes 自身运行环境一起搬入内网。不要只拷贝 node_modules 中某一平台的可选包。
@@ -65,7 +75,7 @@ nova-hm export-resources --bundle ./bundle-20261101 --out ./static-stage --base-
 
 `export-resources` 完全离线运行，先校验冻结批次，复制 `resources/<id>/...` 到新暂存目录，生成 `resource-map.json`（每文件 SHA/URL、版本、平台及环境提示）。保持该相对目录部署到 `base-url`，或在服务端显式映射路径。它不会联系该 URL，也不会上传、覆盖现有服务或运行 shell 配置。输出目录已存在就拒绝；要重试请指定新目录。导出失败清理本次新建输出，不触碰原 bundle。
 
-npm registry 示例使用 HTTPS，沿用既有安全策略：仅回环测试允许 HTTP。若实际私服只有 HTTP，需先明确单独的内网端点安全方案，本次没有默默放宽协议校验。
+npm registry 示例使用 HTTPS。回环测试允许 HTTP；非回环 HTTP 仅在精确地址显式授权时匿名使用，不传凭据。认证发布应走可信 HTTPS。
 
 npm 导入仍使用已有可续跑 run 状态、精确版本内容检查与临时 tag；同名同版本不同字节阻断，不能覆盖私服。正式 tag 在真实验收后按原流程 `promote`。资源服务的冲突/原子发布由既有部署工具负责，不能把本地导出称为部署成功。
 

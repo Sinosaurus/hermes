@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm, mkdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createProgress, progressLine, formatBytes } from '../src/cli/progress.js';
+import { createProgress, progressLine, formatBytes, formatEta } from '../src/cli/progress.js';
 import { packageInputs, collectDefaults, targetRegistry } from '../src/cli/actions.js';
 import { command } from '../src/lib/index.js';
 
@@ -44,7 +44,7 @@ test('TTY updates refresh one line; redirected progress is plain and none is sil
   assert.ok(events.length >= 3);
   // oxlint-disable-next-line no-control-regex -- 校验终端 ANSI 转义是否正确输出或清除。
   assert.match(events.join(''), /\x1b/);
-  assert.match(events.join(''), /下载 1/);
+  assert.match(events.join(''), /成功 1/);
   assert.match(events.join(''), /ETA/);
   assert.equal(events.at(-1), '\n');
   const plain = [];
@@ -157,4 +157,32 @@ test('resource defaults apply to explicit inputs without replacing an explicit r
   const explicit = { ...input, resources: path.join(root, 'explicit-resources.json') };
   assert.deepEqual(await collectDefaults(explicit, root), explicit);
   assert.equal((await collectDefaults({ project: root }, root)).resources, resources);
+});
+
+test('ETA never renders nonfinite placeholders', () => {
+  for (const value of [Infinity, -Infinity, NaN, -1]) assert.equal(formatEta(value), '估算中');
+  assert.equal(formatEta(0), '0s');
+  assert.equal(formatEta(1.2), '2s');
+  assert.equal(formatEta(61), '2min');
+});
+
+test('bulk progress remains bounded and failure is not presented as completion', () => {
+  const chunks = [];
+  const progress = createProgress({ stream: { isTTY: false, write: (text) => chunks.push(text) } });
+  for (let i = 0; i <= 240; i++)
+    progress.update({
+      phase: 'download',
+      total: 240,
+      completed: i,
+      downloaded: i,
+      downloadBytes: i * 4096,
+      name: `pkg-${i}`,
+    });
+  progress.stop();
+  assert.equal(chunks.length, 2);
+  assert.match(chunks[1], /240\/240/);
+  assert.doesNotMatch(chunks.join(''), /pkg-/);
+  progress.update({ phase: 'import', total: 240, completed: 12, uploaded: 10, reused: 2 });
+  progress.fail();
+  assert.match(chunks.at(-1), /失败 1.*已处理 12\/240.*未处理项未验证/);
 });
