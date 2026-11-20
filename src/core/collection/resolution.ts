@@ -1,12 +1,15 @@
 // 文件职责：校验 npm 锁文件与受控参数，在临时目录解析项目或批量根包。
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { SourceEntry, PackageJson, NpmLock, LockEntry } from '../types.js';
 import type { Bundle } from './bundle.js';
+import { fileSpec, localPath, stageLocalInputs } from './local-inputs.js';
+import type { LocalInput, LocalLockInputs } from './local-inputs.js';
 import {
   registrySpec,
   validateIdentity,
   readJson,
+  safePath,
   writeJson,
   npmCommand,
 } from '../../lib/index.js';
@@ -16,6 +19,7 @@ export interface ResolvedInput {
   lockName: string;
   parsed: ReturnType<typeof entriesFromLock>;
   context: string;
+  localInputs?: LocalInput[];
 }
 
 export function validateInstallFlags(flags: string[]) {
@@ -40,15 +44,41 @@ function packageAt(location: string, entry: LockEntry) {
   return entry.name || location.split('node_modules/').at(-1)!;
 }
 
-export function entriesFromLock(lock: NpmLock) {
-  if (![2, 3].includes(lock.lockfileVersion) || !lock.packages || typeof lock.packages !== 'object')
+export function entriesFromLock(lock: NpmLock, { project = false } = {}) {
+  if (
+    ![2, 3].includes(lock.lockfileVersion) ||
+    !lock.packages ||
+    typeof lock.packages !== 'object' ||
+    Array.isArray(lock.packages)
+  )
     throw new Error('Only npm lockfile v2/v3 is supported');
+  for (const location of Object.keys(lock.packages)) {
+    if (
+      location &&
+      (!/^[a-zA-Z0-9@_./-]+$/.test(location) ||
+        location.split('/').some((part) => !part || part === '.' || part === '..'))
+    )
+      throw new Error('Unsafe lockfile package location');
+  }
   const entries: SourceEntry[] = [],
     skipped: { location: string; reason: string }[] = [];
+  const local: LocalLockInputs = { workspaces: [], tarballs: [] };
+  const workspaces = new Set<string>();
   for (const [location, entry] of Object.entries(lock.packages)) {
-    if (!location) continue;
-    if (entry.link)
+    if (!location || !entry.link) continue;
+    if (!project)
       throw new Error(`Workspace/file/link input needs an explicit migration: ${location}`);
+    const target = localPath(entry.resolved, 'workspace');
+    if (workspaces.has(target) || !Object.hasOwn(lock.packages, target))
+      throw new Error(`Missing or ambiguous project workspace lock entry: ${location}`);
+    workspaces.add(target);
+    local.workspaces.push({ location, target });
+  }
+  for (const [location, entry] of Object.entries(lock.packages)) {
+    if (!location || entry.link || workspaces.has(location)) continue;
+    const boundary = location.startsWith('node_modules/') ? 0 : location.indexOf('/node_modules/');
+    if (boundary < 0 || (boundary > 0 && !workspaces.has(location.slice(0, boundary))))
+      throw new Error(`Non-registry lock entry: ${location}`);
     if (entry.inBundle) {
       skipped.push({ location, reason: 'included-in-parent-tarball' });
       continue;
@@ -57,8 +87,6 @@ export function entriesFromLock(lock: NpmLock) {
       skipped.push({ location, reason: 'optional-peer-not-selected' });
       continue;
     }
-    if (!location.includes('node_modules/'))
-      throw new Error(`Non-registry lock entry: ${location}`);
     const item = {
       name: packageAt(location, entry),
       version: entry.version,
@@ -67,6 +95,13 @@ export function entriesFromLock(lock: NpmLock) {
       integrity: entry.integrity,
     };
     validateIdentity(item);
+    if (project && item.resolved?.startsWith('file:')) {
+      const target = fileSpec(item.resolved);
+      if (!target.endsWith('.tgz') || !item.integrity)
+        throw new Error(`Project file input must be a .tgz with locked integrity: ${location}`);
+      local.tarballs.push({ location, target, name: item.name, entry });
+      continue;
+    }
     if (item.resolved && !/^https?:\/\//.test(item.resolved))
       throw new Error(`Git/file/other source requires explicit migration: ${location}`);
     if (item.resolved) {
@@ -78,10 +113,10 @@ export function entriesFromLock(lock: NpmLock) {
     }
     entries.push(item);
   }
-  return { entries, skipped };
+  return { entries, skipped, local };
 }
 
-// 在临时目录验证项目锁，不读取业务源码，也不复制项目级 npm 配置。
+// 在隔离目录验证原锁；只复制校验后的本地清单/制品，不复制项目 npm 配置或业务源码。
 export async function resolveProject(
   project: string,
   work: string,
@@ -89,8 +124,8 @@ export async function resolveProject(
   installFlags: string[],
   bundle: Bundle,
 ): Promise<ResolvedInput> {
-  project = path.resolve(project);
-  const packageJson = await readJson<PackageJson>(path.join(project, 'package.json'));
+  project = await realpath(path.resolve(project));
+  const packageJson = await readJson<PackageJson>(await safePath(project, 'package.json'));
   let lockName = 'npm-shrinkwrap.json';
   try {
     await stat(path.join(project, lockName));
@@ -98,13 +133,21 @@ export async function resolveProject(
     if (error.code !== 'ENOENT') throw error;
     lockName = 'package-lock.json';
   }
-  const lock = await readJson<NpmLock>(path.join(project, lockName));
-  const parsed = entriesFromLock(lock); // 运行解析器前阻断 Git 和链接输入，避免隐式构建。
-  if (packageJson.workspaces) throw new Error('Workspace source migration is not automated in v1');
+  const lock = await readJson<NpmLock>(await safePath(project, lockName));
+  const parsed = entriesFromLock(lock, { project: true });
+  const localInputs = await stageLocalInputs(project, work, packageJson, lock, parsed.local);
   await writeJson(path.join(work, 'package.json'), packageJson);
   await writeJson(path.join(work, lockName), lock);
   await npmCommand(
-    ['ci', '--dry-run', '--ignore-scripts', '--no-audit', '--no-fund', ...installFlags],
+    [
+      'ci',
+      '--dry-run',
+      '--ignore-scripts',
+      '--allow-git=none',
+      '--no-audit',
+      '--no-fund',
+      ...installFlags,
+    ],
     { cwd: work, registry },
   );
   bundle.manifest.roots.push({
@@ -112,7 +155,7 @@ export async function resolveProject(
     name: packageJson.name,
     version: packageJson.version,
   });
-  return { packageJson, lock, lockName, parsed, context: 'project' };
+  return { packageJson, lock, lockName, parsed, localInputs, context: 'project' };
 }
 
 export async function resolveRoots(

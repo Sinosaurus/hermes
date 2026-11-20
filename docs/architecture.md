@@ -136,16 +136,16 @@ collect 未传输入时先找当前目录 `packages.json`，其次找 npm-shrink
 
 inventory/recover 未传 node_modules 时，从当前目录逐级向上查找最近的安装树；当前位置本身为 node_modules 时直接使用。不会向下枚举所有项目或搜索整块磁盘。显式入口和其 realpath 都必须为 node_modules 目录，实例的真实路径必须包含独立的 node_modules 路径段。来源树外的实体还需 allow-link-root，且登记目录必须在另一 node_modules 内；外部源码/workspace 或裸 store 目录不能借此加入发布。pnpm 在 node_modules 内的 `.pnpm` 实体与嵌套链接仍正常扫描。
 
-| 输入或行为                                   | 当前支持                                                                                               | 明确边界                                                                    |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `collect --project`                          | `package.json` 加 npm v2/v3 锁文件；shrinkwrap 优先；临时副本 `npm ci --dry-run --ignore-scripts` 校验 | 必须有锁；不自动生成缺失项目锁，不复制业务源码或项目 `.npmrc`               |
-| `collect --packages-file` / 重复 `--package` | JSON 字符串数组可与命令行根规格合并；各根独立生成锁，再按实际 name/version 合并                        | 与 project 互斥；不证明多个根一起安装时 peer 兼容，不收集全部历史版本       |
-| 传递依赖                                     | 枚举锁文件全部 `packages`；保留多版本；记录 alias 实际身份                                             | Git、file/link、workspace、未知协议阻断；不自行求解 SemVer/peer             |
-| `inventory`                                  | 普通 npm/Yarn 安装树、各层 node_modules 内的 pnpm `.pnpm` / Yarn `.store`、scope、嵌套包、受控链接     | PnP zip/loader 不支持；盘点不证明缺失依赖或原业务根完整                     |
-| `recover --registry`                         | 按实例实际 name/version 获取上游 tarball                                                               | 不保留本地补丁、安装后修改或原安装副作用                                    |
-| `recover --repack`                           | 内容副本禁钩子打包；保留 scripts，计算新 integrity                                                     | 不重放补丁或构建；拒绝声明 bundledDependencies 的目录恢复；使用专用恢复仓库 |
-| 非 npm 资源                                  | 自动读取当前目录已有的 `resources.json`，或 `--resources` 指定本地文件/目录、使用说明、平台及审查证据  | 不自动下载 URL，不扫描脚本猜全资源，不部署资源服务                          |
-| 发布与 tag                                   | 同版本实际字节比对、临时 tag 导入、验收后正式 tag、条件回滚                                            | 不同步 deprecated 到目标，不删除版本，不协调跨机器写入                      |
+| 输入或行为                                   | 当前支持                                                                                               | 明确边界                                                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `collect --project`                          | `package.json` 加 npm v2/v3 锁文件；shrinkwrap 优先；临时副本 `npm ci --dry-run --ignore-scripts` 校验 | 必须有锁；不自动生成缺失项目锁，不复制业务源码或项目 `.npmrc`                                                |
+| `collect --packages-file` / 重复 `--package` | JSON 字符串数组可与命令行根规格合并；各根独立生成锁，再按实际 name/version 合并                        | 与 project 互斥；不证明多个根一起安装时 peer 兼容，不收集全部历史版本                                        |
+| 传递依赖                                     | 枚举锁文件全部 `packages`；保留多版本；记录 alias 实际身份                                             | 项目内已声明 workspace/带 SRI 的本地 TGZ 仅审计保留；Git、任意目录链接和其他协议阻断；不自行求解 SemVer/peer |
+| `inventory`                                  | 普通 npm/Yarn 安装树、各层 node_modules 内的 pnpm `.pnpm` / Yarn `.store`、scope、嵌套包、受控链接     | PnP zip/loader 不支持；盘点不证明缺失依赖或原业务根完整                                                      |
+| `recover --registry`                         | 按实例实际 name/version 获取上游 tarball                                                               | 不保留本地补丁、安装后修改或原安装副作用                                                                     |
+| `recover --repack`                           | 内容副本禁钩子打包；保留 scripts，计算新 integrity                                                     | 不重放补丁或构建；拒绝声明 bundledDependencies 的目录恢复；使用专用恢复仓库                                  |
+| 非 npm 资源                                  | 自动读取当前目录已有的 `resources.json`，或 `--resources` 指定本地文件/目录、使用说明、平台及审查证据  | 不自动下载 URL，不扫描脚本猜全资源，不部署资源服务                                                           |
+| 发布与 tag                                   | 同版本实际字节比对、临时 tag 导入、验收后正式 tag、条件回滚                                            | 不同步 deprecated 到目标，不删除版本，不协调跨机器写入                                                       |
 
 `--install-flag` 仅接收 `--legacy-peer-deps`、`--strict-peer-deps`、`--install-links=true`、`--install-links=false`，传参形如 `--install-flag=--legacy-peer-deps`，可重复。只有原业务确实使用这些参数才传入，不能为解决解析失败随意改树。其他项目配置应先在外网生成受控 npm 锁并验证；首版不承诺复现任意 `.npmrc`。
 
@@ -187,7 +187,7 @@ runs/batch-a/
 | `exceptions`                      | 锁文件内嵌依赖、未选择 optional peer 等已分类条目                                    |
 | `files`                           | 交付相对路径到 SHA-256，排除 manifest/checksums 自身                                 |
 
-原始制品为 `registry-original`，保留源 SRI 并核对 tarball 字节；目录恢复为 `installed-repack`，`sourceIntegrity` 为未知，另算实际 `artifactIntegrity`。包身份读取归档内 `package/package.json`，不从文件名猜测。同一 name/version 不允许不同内容并存。
+原始制品为 `registry-original`，保留源 SRI 并核对 tarball 字节；目录恢复为 `installed-repack`，`sourceIntegrity` 为未知，另算实际 `artifactIntegrity`。包身份读取归档唯一安全根目录下的 `package.json`，不从文件名猜测。同一 name/version 不允许不同内容并存。
 
 `verify` 检查已登记文件集合、路径、哈希、SRI、tarball 包身份及资源文件登记。归档中的符号链接、硬链接和特殊文件直接拒绝，不在本地展开执行。它不执行包代码，也不自动证明入口、内嵌 shrinkwrap 外网 URL、publishConfig、许可证、原生 ABI 或业务功能可用；这些仍需审查和安装验收。源 SRI 缺失直接阻断原始制品收集。
 
@@ -446,7 +446,7 @@ CLI 检查状态、摘要、读写 registry、平台声明、resourceReview 和�
 - 状态和原始 tag 快照备份并限制权限。禁止同时从另一 run/机器修改同仓库 tags。
 - 重打包保留包名版本只在隔离恢复仓库成立；正常仓库用 tag 不能隔离同名同版本的不同字节。
 
-首版没有自动资源发现/下载/部署、Yarn/pnpm 原生锁解析、PnP 导出、Git/workspace 迁移、补丁重放、bundled 目录恢复、共享并发协调、弃用信息写回、差量基线或 Web 界面。需要这些能力的业务先补明确方案，不把未覆盖项当作成功。
+当前不支持自动发现安装器资源或部署静态镜像（已有显式资源采集/导出）、Yarn/pnpm 原生锁解析、PnP 导出、Git 依赖或 workspace 源码迁移、补丁重放、bundled 目录恢复、共享并发协调、弃用信息写回、差量基线或 Web 界面。需要这些能力的业务先补明确方案，不把未覆盖项当作成功。
 
 本地验证入口是 `npm test`；实际通过项目以本次执行结果为准。目标私服产品/版本、最大包上传、无外网业务安装以及各平台资源仍须部署方验收。包级恢复测试不能替代缺失业务根/源码的完整业务迁移证明。
 

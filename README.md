@@ -24,6 +24,8 @@ cd /path/to/project
 nova-hm collect
 ```
 
+项目锁中可以同时存在 registry 包、该项目声明的 npm workspace 和项目内的 `file:路径.tgz`。Hermes 只把 registry 包纳入发布批次，本地项有限制地读取并校验，记录在 `inputs/project/local-inputs.json`。带入内网时要同时带原项目源码和本地 TGZ，保持原相对路径；它们不由 `import` 发布。详细边界见[混合项目锁](docs/airgap-enhancements.md#项目锁包含-workspace-或本地-tgz)。
+
 按包列表收集时，在批次目录创建 `packages.json`，再执行 `nova-hm collect`。列表优先于当前项目锁文件：
 
 ```json

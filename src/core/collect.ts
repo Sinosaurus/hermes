@@ -46,8 +46,11 @@ async function collectInputs(
     const prefix = `inputs/${input.context}`;
     await writeJson(path.join(bundle.out, prefix, 'package.json'), input.packageJson);
     await writeJson(path.join(bundle.out, prefix, input.lockName), input.lock);
+    const localInputs = input.localInputs?.length ? `${prefix}/local-inputs.json` : undefined;
+    if (localInputs) await writeJson(path.join(bundle.out, localInputs), input.localInputs);
     bundle.manifest.inputs.push({
       context: input.context,
+      localInputs,
       packageJson: `${prefix}/package.json`,
       lock: `${prefix}/${input.lockName}`,
       installFlags,

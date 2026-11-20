@@ -37,6 +37,16 @@ export function resultSummary(action: string, result: CommandResult, options: Cl
       `${action === 'verify' ? '校验通过' : '收集完成'}：${result.packages} 个包，${result.resources} 项静态资源`,
       `交付目录：${result.bundle}`,
     ];
+    if ('localInputs' in result && result.localInputs?.length) {
+      lines.push('', `本地依赖保留 ${result.localInputs.length} 项，不发布到私服`);
+      for (const item of result.localInputs.slice(0, 5))
+        lines.push(
+          `${item.kind === 'workspace' ? '工作区' : '本地 TGZ'}：${item.name}@${item.version} · ${item.path}`,
+        );
+      if (result.localInputs.length > 5)
+        lines.push('其余本地依赖见 --json 或 inputs/project/local-inputs.json。');
+      lines.push('安装时请携带原项目源码与本地 TGZ，保持相对路径。');
+    }
     if (result.coverage) {
       const { npm, static: resources } = result.coverage;
       lines.push('', '平台包');

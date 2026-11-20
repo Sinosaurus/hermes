@@ -1,40 +1,18 @@
+import { inspectArchive } from './archive.js';
 // 文件职责：制品校验：检查 tarball、禁钩子打包及验证冻结 bundle。
 import type { Manifest, PackageJson, VerifiedBundle } from '../core/types.js';
 import type { NpmOptions } from './npm.js';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { command, assertPackToolchain, npmJson } from './npm.js';
+import { assertPackToolchain, npmJson } from './npm.js';
 import { validateIdentity, packageSpec } from './packages.js';
 import { safePath, readJson, fileHash, listFiles, assertIntegrity } from './files.js';
 
 export async function readArtifact(file: string) {
-  const listing = (await command('tar', ['-tzf', file])).trim().split('\n');
-  for (const entry of listing) {
-    const parts = entry.replace(/\/$/, '').split('/');
-    if (
-      parts[0] !== 'package' ||
-      parts.some((part) => part === '..' || part === '.') ||
-      entry.includes('\\') ||
-      entry.includes('\0')
-    )
-      throw new Error('Unsafe tarball member');
-  }
-  if (listing.filter((entry) => entry === 'package/package.json').length !== 1)
-    throw new Error('Tarball needs exactly one package/package.json');
-  // 仅读取归档，不解压；拒绝链接和设备文件，防止消费安装时越界。
-  const verbose = await command('tar', ['-tvzf', file]);
-  if (
-    verbose
-      .trim()
-      .split('\n')
-      .some((line) => !['-', 'd'].includes(line[0]))
-  )
-    throw new Error('Tarball links and special files are not supported');
-  const packageJson: PackageJson = JSON.parse(
-    await command('tar', ['-xOf', file, 'package/package.json']),
-  );
+  const inspected = await inspectArchive(file);
+  const packageJson: PackageJson = JSON.parse(inspected.packageJson);
   validateIdentity(packageJson);
-  return { packageJson, members: listing };
+  return { packageJson, members: inspected.members };
 }
 
 export async function packArtifact(spec: string, destination: string, options: NpmOptions = {}) {

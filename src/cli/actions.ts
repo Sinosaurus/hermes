@@ -1,5 +1,7 @@
 // 文件职责：命令适配层：映射参数、调用业务、管理进度并输出 JSON。
 import type { CliAction, CliOptions } from './types.js';
+import { localPath } from '../core/collection/local-inputs.js';
+import type { LocalInput } from '../core/collection/local-inputs.js';
 import type { OnProgress, VerifiedBundle } from '../core/types.js';
 import {
   DEFAULT_SOURCE_REGISTRY,
@@ -14,7 +16,14 @@ import { exportResources } from '../core/resource-export.js';
 import { collect, recover } from '../core/collect.js';
 import { inventoryModules } from '../core/recovery.js';
 import { planImport, importBundle, promoteRun, rollbackRun } from '../core/publish.js';
-import { readJson, verifyBundle, writeJson, npmCommand, normalizeRegistry } from '../lib/index.js';
+import {
+  readJson,
+  verifyBundle,
+  writeJson,
+  npmCommand,
+  normalizeRegistry,
+  validateIdentity,
+} from '../lib/index.js';
 import { withHttpRegistries } from '../lib/security.js';
 import { createProgress } from './progress.js';
 import { banner } from './presentation.js';
@@ -23,7 +32,26 @@ import { bundleCoverage } from './coverage.js';
 
 async function bundleSummary(directory: string, verified: VerifiedBundle) {
   const { manifest, manifestDigest, stats } = verified;
+  const localInputs: LocalInput[] = [];
+  for (const input of Array.isArray(manifest.inputs) ? manifest.inputs : []) {
+    if (!input?.localInputs) continue;
+    if (
+      input.localInputs !== 'inputs/project/local-inputs.json' ||
+      !Object.hasOwn(manifest.files, input.localInputs)
+    )
+      throw new Error('Invalid local input report path');
+    const report = await readJson<LocalInput[]>(path.join(directory, input.localInputs));
+    if (!Array.isArray(report)) throw new Error('Invalid local input report');
+    for (const item of report) {
+      validateIdentity(item);
+      localPath(item.path, 'report');
+      if (!['file-tarball', 'workspace'].includes(item.kind))
+        throw new Error('Invalid local input report kind');
+      localInputs.push(item);
+    }
+  }
   return {
+    ...(localInputs.length ? { localInputs } : {}),
     bundle: path.resolve(directory),
     batchId: manifest.batchId,
     manifestDigest,

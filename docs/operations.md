@@ -102,7 +102,7 @@ nova-hm recover
 | `verify` / `plan`                                          | 文件/制品校验，或只读查目标版本与 tag 差异                   |
 | `import` / `promote` / `rollback`                          | 临时 tag 导入、验收后正式 tag、条件恢复                      |
 
-首版不自动解析 Yarn/pnpm 原生锁、PnP、Git/workspace 或重放补丁；目录恢复遇到 bundledDependencies 直接阻断；非 npm 资源只复制显式本地文件/目录。其他范围及操作示例以 [运行指南](architecture.md#2-工具链与支持范围) 为准。
+不自动解析 Yarn/pnpm 原生锁、PnP、Git 依赖或重放补丁；目录恢复遇到 bundledDependencies 直接阻断。项目锁中受控工作区和本地 TGZ、以及显式非 npm 资源见 [跨隔离网采集增强](airgap-enhancements.md)。其他范围及操作示例以 [运行指南](architecture.md#2-工具链与支持范围) 为准。
 
 ### 1.3 批量输入、进度与统计
 
@@ -187,7 +187,7 @@ flowchart TD
 
 ### 4.1 三种输入
 
-**业务项目迁移（优先）**：输入项目 `package.json`、`package-lock.json` 或 `npm-shrinkwrap.json` 及不含凭证的安装配置；workspaces 源码属于额外迁移输入，首版 CLI 会阻断 workspace。使用原项目锁文件，保留它已选定的每个版本。存在 shrinkwrap 时以 npm 实际使用的文件为准。`npm ci` 要求包声明与锁文件一致；它不会替用户修正锁文件。CLI 项目模式必须提供 npm v2/v3 锁，不为缺失项目锁自动选择新版本。[npm ci 官方说明](https://docs.npmjs.com/cli/v11/commands/npm-ci/)
+**业务项目迁移（优先）**：输入项目 `package.json`、`package-lock.json` 或 `npm-shrinkwrap.json` 及不含凭证的安装配置；受控 workspace 和本地 TGZ 会校验并记录，但不会加入 registry 包列表；它们须随原项目保持相对路径另行交接。使用原项目锁文件，保留它已选定的每个版本。存在 shrinkwrap 时以 npm 实际使用的文件为准。`npm ci` 要求包声明与锁文件一致；它不会替用户修正锁文件。CLI 项目模式必须提供 npm v2/v3 锁，不为缺失项目锁自动选择新版本。[npm ci 官方说明](https://docs.npmjs.com/cli/v11/commands/npm-ci/)
 
 **独立包清单**：输入 `name@精确版本`，例如 `@scope/pkg@1.2.3`。若输入 tag 或版本范围，先在外网解析成具体版本并冻结结果。每个根版本在独立临时项目中生成锁文件，再按实际 `name + version` 合并；不同业务项目也分别保留锁文件。这样避免为多个不兼容根版本强行生成一棵树。
 
@@ -237,7 +237,7 @@ Git 源包是第三方 devDependencies 规则的例外：安装可能先克隆�
 
 下载先写临时文件，验证通过后原子重命名。重跑先复核已有文件再复用。下载地址及重定向须满足源域名白名单；凭证按域名和路径限定，不携带源 token 跟随到其他域名。
 
-读取归档内 `package/package.json`，核对真实名称、版本、scripts、平台限制与 publishConfig。读取时限制文件大小、拒绝路径穿越，不把未检查的归档直接解压到工作根目录。
+读取归档唯一安全根目录下的 `package.json`，核对真实名称、版本、scripts、平台限制与 publishConfig。读取时限制文件大小、拒绝路径穿越，不把未检查的归档直接解压到工作根目录。
 
 同样检查归档内的 `npm-shrinkwrap.json` 及其 resolved 来源。它能随包发布并影响依赖安装；其中硬编码的外网 URL 不一定能靠修改消费项目锁文件消除。需实测内网路由兼容性；不能保持原始制品完成安装时，将其列为阻塞项，另做经审查的内部派生版本及锁文件迁移，不静默重写第三方 tarball。[shrinkwrap 官方说明](https://docs.npmjs.com/cli/v11/configuring-npm/npm-shrinkwrap-json/)
 

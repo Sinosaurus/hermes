@@ -6,6 +6,7 @@ export interface PackageIdentity {
 export type Tags = Record<string, string>;
 export interface PackageJson extends PackageIdentity {
   scripts?: Record<string, string>;
+  publishConfig?: unknown;
   dependencies?: Tags;
   optionalDependencies?: Tags;
   peerDependencies?: Tags;
@@ -105,6 +106,7 @@ export interface Manifest {
     context?: string;
     packageJson?: string;
     lock?: string;
+    localInputs?: string;
     installFlags?: string[];
     inventory?: string;
     layout?: string;

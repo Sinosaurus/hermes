@@ -20,6 +20,21 @@ nova-hm verify --bundle ./bundle-20261101
 
 默认不加该选项时仍只收锁中条目，兼容原行为。非精确范围在采集时解析并冻结，换时间重采可能选中不同版本，请保留 bundle 和 report。不同上下文的同名不同版本均保留；相同包版本仍走既有 tarball 完整性去重/冲突校验。
 
+### 项目锁包含 workspace 或本地 TGZ
+
+`nova-hm collect --project ./my-project --out ./bundle` 支持 npm v2/v3 项目锁中的两类本地条目：
+
+- **npm workspace：** 只接受根清单明确声明的项目内目录，支持字面路径和整个路径段的 `*`（例如 `packages/*`）。目录、清单、链接位置、包名及精确版本必须与锁一致；新增或缺失 workspace 需要先更新 npm 锁。不归档也不发布 workspace 源码。
+- **本地 TGZ：** `file:artifacts/pkg.tgz` 等项目内相对路径必须在根或已验证的 workspace 清单中有对应依赖，且原文件的 SRI、包名和版本与 lock 一致。拒绝绝对路径、路径穿越、符号链接、百分号编码和任意脱离项目目录的输入。不会重打包、改 `private` 或通过 registry 发布这个 TGZ。
+
+Hermes 在临时目录只摆放验证所需的清单和本地 TGZ，禁用安装脚本，不复用项目 .npmrc，不改工作目录和原锁。交付包附带 `inputs/project/local-inputs.json` 记录本地工作区及 TGZ（后者含 SHA-256/SRI），这些本地项不会进入 registry 发布表。内网使用原项目源码与原 TGZ（相同路径、相同字节）配合私服安装；不能只带 Hermes bundle。需要路径迁移时，应在安装工作副本仅改必要的 registry 条目，保留锁里的版本、完整性与本地引用。
+
+不支持任意 directory link、Git/外部 URL 型依赖、`workspace:` 等非 npm 锁协议（npm 项目应使用锁中的本地 link 记录）；`--package` 规格仍只接受 registry 输入。这个能力以原 npm 锁已有的 registry 依赖为准，不会推断本地包在其它系统上的额外依赖或生命周期行为。
+
+### 原始 npm tarball 兼容边界
+
+校验原始 tarball 的内容与锁中 SRI，不解包执行或重打包。允许仅有一个安全目录根，根名可不是 `package/`（部分 `@types/*` 正是这样）；项目清单仍须是该根下唯一的普通 `package.json`。兼容普通 ustar（含 ustar prefix 长路径）和普通 GNU tar 头。GNU longname、PAX 扩展头和其他特殊条目暂不接收；遇到这些格式会明确失败，不会跳过安全校验。路径穿越、链接、文件目录冲突以及歧义重复记录仍会被拦截。源码只允许严格界定的点段别名：只有普通文件的元数据和内容逐字节完全相同才接受，原压缩字节不变。
+
 ## 2. 安装脚本之外的资源
 
 GitHub Releases、厂商二进制、浏览器和运行时文件不是普通 npm tarball。通过显式清单下载，不能推断“scripts 字段为空就不外联”。示例中的 URL、版本和 SHA 必须换成你实际核验过的上游版本：
@@ -89,7 +104,7 @@ npm 导入仍使用已有可续跑 run 状态、精确版本内容检查与临�
 
 ## 5. 当前支持边界
 
-- Git/工作区/file/alias 等非 registry 根规格或元数据边仍显式阻断；没有擅自重写第三方 package.json、执行 Git prepare 或把 Git 仓库冒充 npm 原始制品。URL 锁条目沿用已有回源身份核验，不等于任意私有 URL 包迁移。
+- Git、任意 file/alias 等非 registry 根规格或元数据边仍显式阻断；项目锁的受控 workspace/本地 TGZ 例外见上文；没有擅自重写第三方 package.json、执行 Git prepare 或把 Git 仓库冒充 npm 原始制品。URL 锁条目沿用已有回源身份核验，不等于任意私有 URL 包迁移。
 - 可选 peer 未选中的不自动添加；已解析 peer 跟随 npm 锁。`--legacy-peer-deps` 等受控参数仍显式记录。
 - 当前实现不新增原生 Windows 工具支持，按原项目要求在 WSL/Linux/macOS 使用；采集 Windows 平台文件不等于工具自身在 Windows 原生运行已通过。
 - Hermes 本身仍需 Node、已验证 npm 11.19.0、系统 tar 和自身 dependencies。联网环境 `npm ci --ignore-scripts`、`npm run build` 后应另备其生产依赖/运行工具，内网不得用联网 `npx` 临时获取。跨系统不要直接搬某一机器的开发 node_modules。此更新不包含系统 Node/npm/tar 安装器。

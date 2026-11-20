@@ -107,7 +107,8 @@ export async function npmCommand(args: string[], options: NpmOptions = {}) {
     const file = args[1];
     if (!file || !path.isAbsolute(file))
       throw new Error('Anonymous HTTP publish requires an absolute verified tarball path');
-    const manifest = JSON.parse(await command('tar', ['-xOf', file, 'package/package.json']));
+    const { readArtifact } = await import('./artifacts.js');
+    const { packageJson: manifest } = await readArtifact(file);
     if (manifest.publishConfig !== undefined)
       throw new Error(
         'Anonymous HTTP publish refuses package publishConfig; use HTTPS without modifying the original artifact',
